@@ -11,12 +11,12 @@ app.config.from_object(Config)
 # Initialize S3 client with your bucket's region (ap-southeast-2)
 s3_client = boto3.client(
     's3',
-    aws_access_key_id=app.config['AKIA3AOILREOAHMMUABK'],
-    aws_secret_access_key=app.config['gxp9av9ZTP+8QRU14gUcI4EQvlr55txKxWY0tx2d'],
-    region_name='ap-southeast-2'  
+    aws_access_key_id=app.config['AWS_ACCESS_KEY_ID'],
+    aws_secret_access_key=app.config['AWS_SECRET_ACCESS_KEY'],
+    region_name=app.config['AWS_REGION'],  
 )
 
-AWS_BUCKET_NAME = 'summbuild-videos'
+AWS_BUCKET_NAME = app.config['AWS_BUCKET_NAME']
 
 ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi'}
 

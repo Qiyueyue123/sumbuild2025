@@ -12,19 +12,16 @@
             padding: 20px;
             background-color: #f5f5f5;
         }
-        
         .container {
             background: white;
             padding: 30px;
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        
         h1 {
             text-align: center;
             color: #333;
         }
-        
         .upload-area {
             border: 2px dashed #ccc;
             border-radius: 10px;
@@ -33,27 +30,22 @@
             margin: 20px 0;
             cursor: pointer;
         }
-        
         .upload-area:hover {
             border-color: #007bff;
             background-color: #f8f9ff;
         }
-        
         input[type="file"] {
             display: none;
         }
-        
         .video-container {
             display: none;
             margin-top: 20px;
         }
-        
         video {
             width: 100%;
             max-width: 600px;
             border-radius: 10px;
         }
-        
         button {
             background-color: #007bff;
             color: white;
@@ -64,41 +56,90 @@
             font-size: 16px;
             margin-top: 15px;
         }
-        
         button:hover {
             background-color: #0056b3;
         }
-        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
         .status {
             margin-top: 15px;
             padding: 10px;
             border-radius: 5px;
             display: none;
         }
-        
         .status.success {
             background-color: #d4edda;
             color: #155724;
             border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        #analysisResults {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .analysis-summary {
+            margin-bottom: 20px;
+        }
+        .analysis-summary p {
+            margin: 8px 0;
+        }
+        select {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            margin-top: 10px;
+            width: 100%;
+            max-width: 300px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🏋️ Workout Form Analyzer</h1>
-        
+
         <div class="upload-area" onclick="document.getElementById('videoInput').click()">
             <h3>📹 Click here to upload your workout video</h3>
             <p>Supports: MP4, MOV, AVI files</p>
             <input type="file" id="videoInput" accept="video/*">
         </div>
-        
+
         <div class="video-container" id="videoContainer">
             <video id="videoPlayer" controls></video>
             <br>
-            <button onclick="analyzeVideo()">Analyze My Form</button>
+            <div>
+                <label for="exerciseType">Exercise Type:</label>
+                <select id="exerciseType">
+                    <option value="squat">Squat</option>
+                    <option value="deadlift">Deadlift</option>
+                    <option value="bench_press">Bench Press</option>
+                    <option value="pullup">Pull-up</option>
+                </select>
+            </div>
+            <div id="progressContainer" style="display:none; margin-top: 10px;">
+                <div style="margin-bottom: 5px;">
+                    <span id="progressText">Uploading: 0%</span> |
+                    <span id="fileSizeText"></span> |
+                    <span id="timeEstimateText">Estimating time...</span>
+                </div>
+                <div style="background-color: #e0e0e0; height: 20px; border-radius: 10px; overflow: hidden;">
+                    <div id="progressBar" style="height: 100%; width: 0%; background-color: #007bff;"></div>
+                </div>
+            </div>
+            <button id="analyzeBtn" disabled>Analyze My Form</button>
             <div class="status" id="status"></div>
         </div>
+
+        <div id="analysisResults"></div>
     </div>
 
     <script>
@@ -106,32 +147,153 @@
         const videoContainer = document.getElementById('videoContainer');
         const videoPlayer = document.getElementById('videoPlayer');
         const status = document.getElementById('status');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const exerciseType = document.getElementById('exerciseType');
+        const analysisResults = document.getElementById('analysisResults');
+
+        let currentVideoData = null;
 
         videoInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (file) {
-                // Create a URL for the video file
-                const videoURL = URL.createObjectURL(file);
-                videoPlayer.src = videoURL;
-                
-                // Show the video container
-                videoContainer.style.display = 'block';
-                
-                console.log('Video loaded:', file.name);
-            }
+            if (!file) return;
+
+            analysisResults.style.display = 'none';
+            status.style.display = 'none';
+            analyzeBtn.disabled = true;
+
+            const videoURL = URL.createObjectURL(file);
+            videoPlayer.src = videoURL;
+            videoContainer.style.display = 'block';
+
+            const formData = new FormData();
+            formData.append('video', file);
+            formData.append('exercise_type', exerciseType.value);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload');
+
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const fileSizeText = document.getElementById('fileSizeText');
+            const timeEstimateText = document.getElementById('timeEstimateText');
+
+            let startTime = Date.now();
+            fileSizeText.textContent = `Size: ${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+
+            xhr.upload.addEventListener('progress', function(event) {
+                if (event.lengthComputable) {
+                    const percent = Math.round((event.loaded / event.total) * 100);
+                    progressBar.style.width = percent + '%';
+                    progressText.textContent = `Uploading: ${percent}%`;
+
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    const rate = event.loaded / elapsed;
+                    const remaining = event.total - event.loaded;
+                    const timeLeft = remaining / rate;
+                    const minutes = Math.floor(timeLeft / 60);
+                    const seconds = Math.floor(timeLeft % 60);
+                    timeEstimateText.textContent = `Est. time left: ${minutes}m ${seconds}s`;
+                }
+            });
+
+            xhr.onload = function () {
+                progressContainer.style.display = 'none';
+                let data;
+                try {
+                    data = JSON.parse(xhr.responseText);
+                } catch (e) {
+                    status.innerHTML = '❌ Invalid server response';
+                    status.className = 'status error';
+                    status.style.display = 'block';
+                    return;
+                }
+
+                if (xhr.status === 200 && data.video_url) {
+                    currentVideoData = {
+                        video_url: data.video_url,
+                        exercise_type: exerciseType.value,
+                        video_id: data.video_url.split('/').pop().split('.')[0]
+                    };
+                    status.innerHTML = '✅ Video uploaded successfully!';
+                    status.className = 'status success';
+                    status.style.display = 'block';
+                    analyzeBtn.disabled = false;
+                } else {
+                    status.innerHTML = `❌ Upload failed: ${data.error || 'Unknown error'}`;
+                    status.className = 'status error';
+                    status.style.display = 'block';
+                    analyzeBtn.disabled = true;
+                }
+            };
+
+            xhr.onerror = function () {
+                progressContainer.style.display = 'none';
+                status.innerHTML = '❌ Upload failed';
+                status.className = 'status error';
+                status.style.display = 'block';
+                analyzeBtn.disabled = true;
+            };
+
+            progressContainer.style.display = 'block';
+            xhr.send(formData);
         });
 
-        function analyzeVideo() {
-            // For now, just show a message
-            status.innerHTML = '🔄 Analysis starting... (MediaPipe integration coming next!)';
-            status.className = 'status success';
+        analyzeBtn.addEventListener('click', function() {
+            if (!currentVideoData) {
+                status.innerHTML = '❌ Please upload a video first!';
+                status.className = 'status error';
+                status.style.display = 'block';
+                return;
+            }
+
+            currentVideoData.exercise_type = exerciseType.value;
+            analyzeBtn.disabled = true;
+            const originalText = analyzeBtn.textContent;
+            analyzeBtn.textContent = 'Analyzing...';
+            status.innerHTML = '🔄 Analyzing your form...';
+            status.className = 'status';
             status.style.display = 'block';
-            
-            // Simulate processing
-            setTimeout(() => {
-                status.innerHTML = '✅ Ready for real analysis! Next: Add MediaPipe and AI feedback.';
-            }, 2000);
-        }
+
+            fetch('/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(currentVideoData)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    analysisResults.innerHTML = `
+                        <h3>Analysis Results</h3>
+                        <div class="analysis-summary">
+                            <p><strong>Exercise:</strong> ${data.analysis.exercise || currentVideoData.exercise_type}</p>
+                            <p><strong>Frames Analyzed:</strong> ${data.analysis.total_frames_analyzed || 'N/A'}</p>
+                            ${data.analysis.average_knee_angle ? `<p><strong>Average Knee Angle:</strong> ${data.analysis.average_knee_angle}°</p>` : ''}
+                            ${data.analysis.deepest_squat_angle ? `<p><strong>Deepest Squat:</strong> ${data.analysis.deepest_squat_angle}°</p>` : ''}
+                            ${data.analysis.average_elbow_angle ? `<p><strong>Average Elbow Angle:</strong> ${data.analysis.average_elbow_angle}°</p>` : ''}
+                            ${data.analysis.best_elbow_angle ? `<p><strong>Best Elbow Angle:</strong> ${data.analysis.best_elbow_angle}°</p>` : ''}
+                            ${data.analysis.chin_above_bar_rate ? `<p><strong>Chin Above Bar Rate:</strong> ${data.analysis.chin_above_bar_rate}%</p>` : ''}
+                            ${data.analysis.deepest_angle ? `<p><strong>Deepest Bench Angle:</strong> ${data.analysis.deepest_angle}°</p>` : ''}
+                            ${data.analysis.good_bar_path_rate ? `<p><strong>Good Bar Path Rate:</strong> ${data.analysis.good_bar_path_rate}%</p>` : ''}
+                            <p><strong>Overall Feedback:</strong> ${data.analysis.overall_feedback || 'No specific feedback available'}</p>
+                        </div>
+                        ${data.processed_url ? `<h4>Processed Video with Pose Detection:</h4><video width="100%" controls><source src="${data.processed_url}" type="video/mp4"></video>` : ''}
+                    `;
+                    analysisResults.style.display = 'block';
+                    status.style.display = 'none';
+                } else {
+                    throw new Error(data.error || 'Analysis failed');
+                }
+            })
+            .catch(err => {
+                status.innerHTML = `❌ Error: ${err.message}`;
+                status.className = 'status error';
+            })
+            .finally(() => {
+                analyzeBtn.textContent = originalText;
+                analyzeBtn.disabled = false;
+            });
+        });
     </script>
 </body>
 </html>

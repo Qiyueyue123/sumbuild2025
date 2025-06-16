@@ -4,21 +4,31 @@ import boto3
 from werkzeug.utils import secure_filename
 from config import Config
 import uuid
+import tempfile
+from video_processor import GymFormAnalyzer
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# Initialize S3 client with your bucket's region (ap-southeast-2)
+# Initialize S3 client
 s3_client = boto3.client(
     's3',
     aws_access_key_id=app.config['AWS_ACCESS_KEY_ID'],
     aws_secret_access_key=app.config['AWS_SECRET_ACCESS_KEY'],
-    region_name=app.config['AWS_REGION'],  
+    region_name=app.config['AWS_REGION']
 )
 
 AWS_BUCKET_NAME = app.config['AWS_BUCKET_NAME']
-
+AWS_REGION = app.config['AWS_REGION']
 ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi'}
+
+# Initialize GymFormAnalyzer
+analyzer = GymFormAnalyzer()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -30,133 +40,111 @@ def home():
 @app.route('/upload', methods=['POST'])
 def upload_video():
     if 'video' not in request.files:
-        return jsonify({'error': 'No video file'}), 400
+        return jsonify({'error': 'No video file in request'}), 400
     
     file = request.files['video']
+    exercise_type = request.form.get('exercise_type', 'squat')
     
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
     if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type. Only MP4, MOV, AVI allowed'}), 400
-    
+        return jsonify({'error': 'Invalid file type. Allowed types: mp4, mov, avi'}), 400
+
     try:
-        # Generate unique filename
         file_extension = file.filename.rsplit('.', 1)[1].lower()
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
         
-        # Upload to S3
+        # Upload original video to S3
         s3_client.upload_fileobj(
             file,
-            AWS_BUCKET_NAME,  # Using the bucket from your screenshot
+            AWS_BUCKET_NAME,
             unique_filename,
             ExtraArgs={'ContentType': f'video/{file_extension}'}
         )
         
-        # Generate S3 URL (updated for ap-southeast-2)
-        s3_url = f"https://{AWS_BUCKET_NAME}.s3.ap-southeast-2.amazonaws.com/{unique_filename}"
+        # Construct S3 URL dynamically with region
+        s3_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{unique_filename}"
+        
+        logger.info(f"Uploaded video {file.filename} as {unique_filename} to S3")
         
         return jsonify({
             'message': 'Video uploaded successfully!',
             'video_url': s3_url,
-            'filename': file.filename
+            'filename': file.filename,
+            'exercise_type': exercise_type
         })
         
     except Exception as e:
+        logger.error(f"Upload failed: {e}")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
-@app.route('/test-s3')
-def test_s3():
+@app.route('/analyze', methods=['POST'])
+def analyze_video():
+    data = request.json
+    if not data or 'video_url' not in data:
+        return jsonify({'error': 'Missing video URL in request body'}), 400
+    
+    video_url = data['video_url']
+    exercise_type = data.get('exercise_type', 'squat')
+    
+    # Extract S3 key (filename) from URL
     try:
-        # List objects in your bucket (this will verify connection)
-        response = s3_client.list_objects_v2(Bucket=AWS_BUCKET_NAME, MaxKeys=1)
-        return jsonify({
-            "status": "success", 
-            "message": "S3 connection successful",
-            "bucket": AWS_BUCKET_NAME
-        })
+        s3_key = video_url.split('/')[-1]
+        if not s3_key:
+            raise ValueError("Invalid video URL format")
     except Exception as e:
-        return jsonify({
-            "status": "error", 
-            "message": str(e)
-        }), 500
-
-@app.route('/test-upload', methods=['POST'])
-def test_upload():
-    if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file provided"}), 400
+        return jsonify({'error': f'Failed to extract video key from URL: {str(e)}'}), 400
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"status": "error", "message": "No file selected"}), 400
+    tmp_path = None
+    processed_path = None
     
-    if file and allowed_file(file.filename):
-        try:
-            filename = secure_filename(file.filename)
-            unique_filename = f"{uuid.uuid4()}_{filename}"
-            
-            # Upload to S3
+    try:
+        # Download video from S3 to a temporary file
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(s3_key)[1], delete=False) as tmp_file:
+            s3_client.download_fileobj(AWS_BUCKET_NAME, s3_key, tmp_file)
+            tmp_path = tmp_file.name
+        
+        logger.info(f"Downloaded video {s3_key} to temp file {tmp_path}")
+        
+        # Prepare path for processed output video
+        processed_filename = f"processed_{s3_key}"
+        processed_path = os.path.join(tempfile.gettempdir(), processed_filename)
+        
+        # Analyze/process video
+        result = analyzer.process_video(tmp_path, processed_path, exercise_type)
+        
+        # Upload processed video back to S3
+        with open(processed_path, 'rb') as processed_file:
             s3_client.upload_fileobj(
-                file,
+                processed_file,
                 AWS_BUCKET_NAME,
-                unique_filename,
-                ExtraArgs={'ContentType': file.content_type}
+                processed_filename,
+                ExtraArgs={'ContentType': 'video/mp4'}
             )
-            
-            return jsonify({
-                "status": "success",
-                "message": "Video uploaded successfully",
-                "filename": unique_filename
-            })
-        except Exception as e:
-            return jsonify({
-                "status": "error",
-                "message": str(e)
-            }), 500
-    else:
+        
+        processed_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{processed_filename}"
+        logger.info(f"Uploaded processed video to {processed_url}")
+        
         return jsonify({
-            "status": "error", 
-            "message": "File type not allowed. Only mp4, mov, and avi files are supported"
-        }), 400
-
-@app.route('/upload-form')
-def upload_form():
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Test Video Upload</title>
-    </head>
-    <body>
-        <h2>Test Video Upload</h2>
-        <form action="/test-upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".mp4,.mov,.avi" required>
-            <br><br>
-            <input type="submit" value="Upload Video">
-        </form>
-    </body>
-    </html>
-    '''
-
-@app.route('/main-upload-form')
-def main_upload_form():
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Main Upload Test</title>
-    </head>
-    <body>
-        <h2>Test Main Upload Endpoint</h2>
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="video" accept=".mp4,.mov,.avi" required>
-            <br><br>
-            <input type="submit" value="Upload Video">
-        </form>
-        <div id="result"></div>
-    </body>
-    </html>
-    '''
+            'success': True,
+            'processed_url': processed_url,
+            'analysis': result.get('summary', {})
+        })
+    
+    except Exception as e:
+        logger.error(f"Video analysis failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+    finally:
+        # Cleanup temporary files if they exist
+        for path in [tmp_path, processed_path]:
+            if path and os.path.exists(path):
+                try:
+                    os.unlink(path)
+                    logger.info(f"Deleted temp file {path}")
+                except Exception as cleanup_err:
+                    logger.warning(f"Failed to delete temp file {path}: {cleanup_err}")
 
 if __name__ == '__main__':
     app.run(debug=True)

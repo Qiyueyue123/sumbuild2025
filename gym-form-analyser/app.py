@@ -43,7 +43,7 @@ def upload_video():
         return jsonify({'error': 'No video file in request'}), 400
     
     file = request.files['video']
-    exercise_type = request.form.get('exercis_type', 'squat')
+    exercise_type = request.form.get('exercise_type', 'squat')
     
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400

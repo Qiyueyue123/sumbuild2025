@@ -120,8 +120,7 @@
                 <label for="exerciseType">Exercise Type:</label>
                 <select id="exerciseType">
                     <option value="squat">Squat</option>
-                    <option value="deadlift">Deadlift</option>
-                    <option value="bench_press">Bench Press</option>
+                    <option value="bench">Bench Press</option>
                     <option value="pullup">Pull-up</option>
                 </select>
             </div>
@@ -263,19 +262,19 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
+                    console.log(data.analysis)
                     analysisResults.innerHTML = `
                         <h3>Analysis Results</h3>
                         <div class="analysis-summary">
                             <p><strong>Exercise:</strong> ${data.analysis.exercise || currentVideoData.exercise_type}</p>
                             <p><strong>Frames Analyzed:</strong> ${data.analysis.total_frames_analyzed || 'N/A'}</p>
-                            ${data.analysis.average_knee_angle ? `<p><strong>Average Knee Angle:</strong> ${data.analysis.average_knee_angle}°</p>` : ''}
-                            ${data.analysis.deepest_squat_angle ? `<p><strong>Deepest Squat:</strong> ${data.analysis.deepest_squat_angle}°</p>` : ''}
-                            ${data.analysis.average_elbow_angle ? `<p><strong>Average Elbow Angle:</strong> ${data.analysis.average_elbow_angle}°</p>` : ''}
-                            ${data.analysis.best_elbow_angle ? `<p><strong>Best Elbow Angle:</strong> ${data.analysis.best_elbow_angle}°</p>` : ''}
+                            ${data.analysis.average_angle_at_concentric? `<p><strong>Average Concentric Angle:</strong> ${data.analysis.average_angle_at_concentric}°</p>` : ''}
+                            ${data.analysis.average_angle_at_eccentric ? `<p><strong>Average Eccentric Angle</strong> ${data.analysis.average_angle_at_eccentric}°</p>` : ''}
                             ${data.analysis.chin_above_bar_rate ? `<p><strong>Chin Above Bar Rate:</strong> ${data.analysis.chin_above_bar_rate}%</p>` : ''}
                             ${data.analysis.deepest_angle ? `<p><strong>Deepest Bench Angle:</strong> ${data.analysis.deepest_angle}°</p>` : ''}
                             ${data.analysis.good_bar_path_rate ? `<p><strong>Good Bar Path Rate:</strong> ${data.analysis.good_bar_path_rate}%</p>` : ''}
                             <p><strong>Overall Feedback:</strong> ${data.analysis.overall_feedback || 'No specific feedback available'}</p>
+                            
                         </div>
                         ${data.processed_url ? `<h4>Processed Video with Pose Detection:</h4><video width="100%" controls><source src="${data.processed_url}" type="video/mp4"></video>` : ''}
                     `;

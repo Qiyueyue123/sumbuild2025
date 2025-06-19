@@ -43,7 +43,7 @@ def upload_video():
         return jsonify({'error': 'No video file in request'}), 400
     
     file = request.files['video']
-    exercise_type = request.form.get('exercise_type', 'squat')
+    exercise_type = request.form.get('exercis_type', 'squat')
     
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
@@ -122,7 +122,7 @@ def analyze_video():
                 processed_filename,
                 ExtraArgs={'ContentType': 'video/mp4'}
             )
-        
+        logger.info(f"{result}")
         processed_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{processed_filename}"
         logger.info(f"Uploaded processed video to {processed_url}")
         
@@ -131,7 +131,7 @@ def analyze_video():
             'processed_url': processed_url,
             'analysis': result.get('summary', {})
         })
-    
+
     except Exception as e:
         logger.error(f"Video analysis failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500

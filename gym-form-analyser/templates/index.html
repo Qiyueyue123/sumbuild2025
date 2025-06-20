@@ -101,6 +101,27 @@
             width: 100%;
             max-width: 300px;
         }
+        /* New style for Gemini feedback */
+        .gemini-feedback {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 1px dashed #ccc;
+        }
+        .gemini-feedback h4 {
+            color: #007bff;
+            margin-bottom: 10px;
+        }
+        .gemini-feedback pre {
+            white-space: pre-wrap; /* Allows text to wrap */
+            word-wrap: break-word; /* Breaks long words */
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 0.95em;
+            line-height: 1.6;
+            color: #343a40;
+            overflow-x: auto; /* For very long lines */
+        }
     </style>
 </head>
 <body>
@@ -261,36 +282,31 @@
             })
             .then(res => res.json())
             .then(data => {
-
                 if (data.success) {
-
-                //                     {
-                //     'exercise': <str>,  # e.g., 'squat'
-                //     'total_frames_analyzed': <int>,  # e.g., total number of frames analyzed
-                //     'average_peak_angle': <float or None>,  # average angle at the top of movement
-                //     'average_descent_angle': <float or None>,  # average angle at the bottom of movement
-                //     'overall_feedback': (
-                //         <str>,  # qualitative feedback based on angle depth
-                //         <str>   # summary of rep quality
-                //     )
-                // }
-
-
                     analysisResults.innerHTML = `
-                        <h3>Analysis Results</h3>
+                        <h3>Analysis Results (Automated)</h3>
                         <div class="analysis-summary">
                             <p><strong>Exercise:</strong> ${data.analysis.exercise || currentVideoData.exercise_type}</p>
                             <p><strong>Frames Analyzed:</strong> ${data.analysis.total_frames_analyzed || 'N/A'}</p>
-                            ${data.analysis.average_peak_angle ? `<p><strong>Average peak angle</strong> ${data.analysis.average_peak_angle}°</p>` : ''}
-                            ${data.analysis.average_descent_angle ? `<p><strong>Average descent angle:</strong> ${data.analysis.average_descent_angle}°</p>` : ''}
-                            ${data.analysis.average_elbow_angle ? `<p><strong>Average Elbow Angle:</strong> ${data.analysis.average_elbow_angle}°</p>` : ''}
-                            ${data.analysis.best_elbow_angle ? `<p><strong>Best Elbow Angle:</strong> ${data.analysis.best_elbow_angle}°</p>` : ''}
-                            ${data.analysis.chin_above_bar_rate ? `<p><strong>Chin Above Bar Rate:</strong> ${data.analysis.chin_above_bar_rate}%</p>` : ''}
-                            ${data.analysis.deepest_angle ? `<p><strong>Deepest Bench Angle:</strong> ${data.analysis.deepest_angle}°</p>` : ''}
-                            ${data.analysis.good_bar_path_rate ? `<p><strong>Good Bar Path Rate:</strong> ${data.analysis.good_bar_path_rate}%</p>` : ''}
+                            ${data.analysis.average_peak_angle && data.analysis.average_peak_angle !== -1 ? `<p><strong>Average peak angle:</strong> ${data.analysis.average_peak_angle}°</p>` : ''}
+                            ${data.analysis.average_descent_angle && data.analysis.average_descent_angle !== -1 ? `<p><strong>Average descent angle:</strong> ${data.analysis.average_descent_angle}°</p>` : ''}
+                            ${data.analysis.good_reps ? `<p><strong>Good Reps:</strong> ${data.analysis.good_reps}</p>` : ''}
+                            ${data.analysis.bad_reps ? `<p><strong>Bad Reps:</strong> ${data.analysis.bad_reps}</p>` : ''}
+                            ${data.analysis.total_reps ? `<p><strong>Total Reps:</strong> ${data.analysis.total_reps}</p>` : ''}
                             <p><strong>Overall Feedback:</strong> ${data.analysis.overall_feedback || 'No specific feedback available'}</p>
                         </div>
-                        ${data.processed_url ? `<h4>Processed Video with Pose Detection:</h4><video width="100%" controls><source src="${data.processed_url}" type="video/mp4"></video>` : ''}
+
+                        ${data.gemini_feedback ? `
+                            <div class="gemini-feedback">
+                                <h4>AI Form Feedback by Gemini</h4>
+                                <pre>${data.gemini_feedback}</pre>
+                            </div>
+                        ` : ''}
+
+                        ${data.processed_url ? `
+                            <h4>Processed Video with Pose Detection:</h4>
+                            <video width="100%" controls><source src="${data.processed_url}" type="video/mp4"></video>
+                        ` : ''}
                     `;
                     analysisResults.style.display = 'block';
                     status.style.display = 'none';

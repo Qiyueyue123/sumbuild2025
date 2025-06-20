@@ -261,14 +261,28 @@
             })
             .then(res => res.json())
             .then(data => {
+
                 if (data.success) {
+
+                //                     {
+                //     'exercise': <str>,  # e.g., 'squat'
+                //     'total_frames_analyzed': <int>,  # e.g., total number of frames analyzed
+                //     'average_peak_angle': <float or None>,  # average angle at the top of movement
+                //     'average_descent_angle': <float or None>,  # average angle at the bottom of movement
+                //     'overall_feedback': (
+                //         <str>,  # qualitative feedback based on angle depth
+                //         <str>   # summary of rep quality
+                //     )
+                // }
+
+
                     analysisResults.innerHTML = `
                         <h3>Analysis Results</h3>
                         <div class="analysis-summary">
                             <p><strong>Exercise:</strong> ${data.analysis.exercise || currentVideoData.exercise_type}</p>
                             <p><strong>Frames Analyzed:</strong> ${data.analysis.total_frames_analyzed || 'N/A'}</p>
-                            ${data.analysis.average_knee_angle ? `<p><strong>Average Knee Angle:</strong> ${data.analysis.average_knee_angle}°</p>` : ''}
-                            ${data.analysis.deepest_squat_angle ? `<p><strong>Deepest Squat:</strong> ${data.analysis.deepest_squat_angle}°</p>` : ''}
+                            ${data.analysis.average_peak_angle ? `<p><strong>Average peak angle</strong> ${data.analysis.average_peak_angle}°</p>` : ''}
+                            ${data.analysis.average_descent_angle ? `<p><strong>Average descent angle:</strong> ${data.analysis.average_descent_angle}°</p>` : ''}
                             ${data.analysis.average_elbow_angle ? `<p><strong>Average Elbow Angle:</strong> ${data.analysis.average_elbow_angle}°</p>` : ''}
                             ${data.analysis.best_elbow_angle ? `<p><strong>Best Elbow Angle:</strong> ${data.analysis.best_elbow_angle}°</p>` : ''}
                             ${data.analysis.chin_above_bar_rate ? `<p><strong>Chin Above Bar Rate:</strong> ${data.analysis.chin_above_bar_rate}%</p>` : ''}

@@ -4,6 +4,66 @@ import numpy as np
 import json
 import os
 
+ #The number of frames you skip before analyzing the next frame. Dont put it too high or its not reflected well
+
+
+#UTILITY FUNCTIONS
+
+def count_reps_and_track_extremes(angles, states):
+        good_reps = 0
+        total_reps = 0
+        state_buffer = []
+
+        peak_angles = []
+        descent_angles = []
+
+        for i in range(len(states)):
+            state = states[i]
+            if len(state_buffer) == 0 or state != state_buffer[len(state_buffer)-1]:
+                state_buffer.append(state)
+
+            if len(state_buffer) > 3:
+                state_buffer.pop(0)
+
+            pattern = ''.join(state_buffer)
+
+            if pattern == 'TOPMIDBOT':
+                good_reps += 1
+                total_reps += 1
+                state_buffer = []
+
+            elif len(state_buffer) >= 2 and ''.join(state_buffer[-2:]) == 'MIDBOT':
+                total_reps += 1
+                state_buffer = []
+
+            elif len(state_buffer) == 3 and ''.join(state_buffer) == 'TOPMIDTOP':
+                total_reps += 1
+                state_buffer = []
+
+            # Use 3-point local max/min check: angle[i-1], angle[i], angle[i+1]
+            if 0 < i < len(angles) - 1:
+                prev_a, curr_a, next_a = angles[i-1], angles[i], angles[i+1]
+                if curr_a > prev_a and curr_a > next_a:
+                    peak_angles.append(curr_a)
+                elif curr_a < prev_a and curr_a < next_a:
+                    descent_angles.append(curr_a)
+
+        # Calculate averages
+        avg_peak = sum(peak_angles) / len(peak_angles) if peak_angles else None
+        avg_descent = sum(descent_angles) / len(descent_angles) if descent_angles else None
+
+        return {
+            'good_reps': str(good_reps),
+            'bad_reps': str(total_reps-good_reps),
+            'total_reps': str(total_reps),
+            'avg_peak_angle': round(avg_peak, 2), 
+            'avg_descent_angle': round(avg_descent, 2) 
+        }
+
+
+
+
+
 class GymFormAnalyzer:
     def __init__(self):
         self.mp_pose = mp.solutions.pose
@@ -12,8 +72,8 @@ class GymFormAnalyzer:
             static_image_mode=False,
             model_complexity=1,
             smooth_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.7
         )
     
     def calculate_angle(self, point1, point2, point3):
@@ -43,66 +103,12 @@ class GymFormAnalyzer:
             
             # Calculate knee angle
             knee_angle = self.calculate_angle(hip, knee, ankle)
-            
-            # Squat depth analysis
-            if knee_angle < 90:
-                depth = "Deep squat - Excellent!"
-            elif knee_angle < 110:
-                depth = "Good squat depth"
-            else:
-                depth = "Squat deeper - go below 90°"
-            
             return {
-                'knee_angle': round(knee_angle, 1),
-                'depth_feedback': depth,
-                'exercise': 'squat'
+                'angleToCheck': round(knee_angle, 1),
             }
         except:
             return None
-    
-    def analyze_pullup(self, landmarks):
-        """Analyze pull-up form"""
-        try:
-            # Get key points for pull-up analysis
-            left_shoulder = [landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                            landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            left_elbow = [landmarks[self.mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
-                         landmarks[self.mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
-            left_wrist = [landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST.value].x,
-                         landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST.value].y]
-            
-            # Calculate elbow angle (for pull-up depth)
-            elbow_angle = self.calculate_angle(left_shoulder, left_elbow, left_wrist)
-            
-            # Body alignment check (hip to shoulder)
-            left_hip = [landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                       landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value].y]
-            
-            # Check if chin is above bar level (wrist level approximation)
-            chin_y = landmarks[self.mp_pose.PoseLandmark.NOSE.value].y
-            bar_level_y = left_wrist[1]  # Approximate bar level
-            chin_above_bar = chin_y < bar_level_y
-            
-            # Pull-up form analysis
-            if elbow_angle < 90 and chin_above_bar:
-                form = "Excellent pull-up! Full range of motion"
-            elif elbow_angle < 120:
-                form = "Good pull-up, try to get chin higher"
-            elif chin_above_bar:
-                form = "Good height, but pull elbows closer"
-            else:
-                form = "Pull higher - get chin above bar"
-            
-            return {
-                'elbow_angle': round(elbow_angle, 1),
-                'chin_above_bar': chin_above_bar,
-                'form_feedback': form,
-                'exercise': 'pullup'
-            }
-        except:
-            return None
-    
-    def analyze_bench(self, landmarks):
+    def analyze_bench_or_pull(self, landmarks):
         """Analyze bench press form"""
         try:
             # Get key points for bench press
@@ -116,30 +122,8 @@ class GymFormAnalyzer:
             # Calculate elbow angle
             elbow_angle = self.calculate_angle(left_shoulder, left_elbow, left_wrist)
             
-            # Check bar path (wrist should be above elbow at bottom)
-            wrist_above_elbow = left_wrist[1] < left_elbow[1]
-            
-            # Check if elbows are too flared (shoulder-elbow-wrist angle)
-            elbow_flare_angle = self.calculate_angle(left_shoulder, left_elbow, left_wrist)
-            
-            # Bench press form analysis
-            if elbow_angle < 90 and wrist_above_elbow:
-                form = "Good bench press depth and bar path!"
-            elif elbow_angle < 90:
-                form = "Good depth, check bar path over chest"
-            elif wrist_above_elbow:
-                form = "Good bar path, go deeper to chest"
-            elif elbow_flare_angle > 160:
-                form = "Elbows too flared - tuck them in more"
-            else:
-                form = "Focus on form: deeper range, bar to chest"
-            
             return {
-                'elbow_angle': round(elbow_angle, 1),
-                'bar_path_good': wrist_above_elbow,
-                'elbow_flare_angle': round(elbow_flare_angle, 1),
-                'form_feedback': form,
-                'exercise': 'bench'
+                'angleToCheck' : elbow_angle
             }
         except:
             return None
@@ -156,9 +140,12 @@ class GymFormAnalyzer:
         # Video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-        
+        throttleValue = 0
+        frameSkipped = 2
         analysis_results = []
         frame_count = 0
+        list_of_frames = []
+        list_of_states = []
         
         while cap.isOpened():
             success, image = cap.read()
@@ -166,125 +153,136 @@ class GymFormAnalyzer:
                 break
             
             frame_count += 1
-            
-            # Convert BGR to RGB
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image_rgb.flags.writeable = False
-            
-            # Process with MediaPipe
-            results = self.pose.process(image_rgb)
-            
-            # Convert back to BGR
-            image_rgb.flags.writeable = True
-            image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-            
-            # Analyze pose if detected
-            if results.pose_landmarks:
-                # Draw pose landmarks
-                self.mp_drawing.draw_landmarks(
-                    image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
+            if frame_count - throttleValue > frameSkipped:
+                # Convert BGR to RGB
+                throttleValue = frame_count
+                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                image_rgb.flags.writeable = False
                 
-                # Analyze form based on exercise type
-                if exercise_type == "squat":
-                    analysis = self.analyze_squat(results.pose_landmarks.landmark)
-                elif exercise_type == "pullup":
-                    analysis = self.analyze_pullup(results.pose_landmarks.landmark)
-                elif exercise_type == "bench":
-                    analysis = self.analyze_bench(results.pose_landmarks.landmark)
-                else:
-                    analysis = None
+                # Process with MediaPipe
+                results = self.pose.process(image_rgb)
                 
-                if analysis:
-                    analysis['frame'] = frame_count
-                    analysis_results.append(analysis)
+                # Convert back to BGR
+                image_rgb.flags.writeable = True
+                image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+                
+                # Analyze pose if detected
+                if results.pose_landmarks:
+                    # Draw pose landmarks
+                    self.mp_drawing.draw_landmarks(
+                        image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
                     
-                    # Draw analysis on frame based on exercise
+                    # Analyze form based on exercise type
                     if exercise_type == "squat":
-                        cv2.putText(image, f"Knee Angle: {analysis['knee_angle']}°", 
-                                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        cv2.putText(image, analysis['depth_feedback'], 
-                                   (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    
+                        analysis = self.analyze_squat(results.pose_landmarks.landmark)
                     elif exercise_type == "pullup":
-                        cv2.putText(image, f"Elbow Angle: {analysis['elbow_angle']}°", 
-                                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        cv2.putText(image, f"Chin Above Bar: {'Yes' if analysis['chin_above_bar'] else 'No'}", 
-                                   (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        cv2.putText(image, analysis['form_feedback'], 
-                                   (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    
+                        analysis = self.analyze_bench_or_pull(results.pose_landmarks.landmark)
                     elif exercise_type == "bench":
-                        cv2.putText(image, f"Elbow Angle: {analysis['elbow_angle']}°", 
-                                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        cv2.putText(image, f"Bar Path: {'Good' if analysis['bar_path_good'] else 'Check'}", 
-                                   (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        cv2.putText(image, analysis['form_feedback'], 
-                                   (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        analysis = self.analyze_bench_or_pull(results.pose_landmarks.landmark)
+                    else:
+                        analysis = None
+                    angleOfCurrentState = analysis['angleToCheck'] if analysis else 0
+
+                    #0 is just defaulting to the bottom state
+                    list_of_frames.append(angleOfCurrentState)
+                    currentState = 2
+                    if(angleOfCurrentState > 150):
+                        #implies that it is at the top
+                        currentState = 0
+                        list_of_states.append('TOP')
+                    elif(angleOfCurrentState > 100):
+                        #implies that it is at the mid point
+                        currentState = 1
+                        list_of_states.append('MID')
+                    else:
+                        #quote on quote rest state
+                        currentState = 2
+                        list_of_states.append('BOT')
+
+                    if analysis:
+                        analysis_results.append(analysis)
+                        
+                        # Draw analysis on frame based on exercise
+                        if exercise_type == "squat" or exercise_type == "pullup" or exercise_type == "bench":
+                            allStates = ['TOP','MID','BOT']
+                            colourTuple = (255 if currentState == 0 else 0,255 if currentState == 1 else 0,255 if currentState == 2 else 0)
+                            cv2.putText(image, f"Key Joint Angle: {round(angleOfCurrentState,4)}°", 
+                                    (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, colourTuple, 2)
+                            cv2.putText(image, allStates[currentState], 
+                                    (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, colourTuple, 2)
+                
+                out.write(image)
             
-            out.write(image)
-        
+            
+            
+            # Generate summary
         cap.release()
         out.release()
-        
-        # Generate summary
-        summary = self.generate_summary(analysis_results, exercise_type)
-        
+        summary = self.generate_summary(list_of_frames,list_of_states, exercise_type)
         return {
             'processed_video': output_path,
             'analysis_results': analysis_results,
             'summary': summary
         }
-    
-    def generate_summary(self, results, exercise_type):
-        """Generate analysis summary"""
-        if not results:
-            return "No pose detected in video"
+   
         
+    def generate_summary(self, frameSet, stateSet, exercise_type):
+        frameSkipped = 2
+        if not frameSet:
+            return "No pose detected in video"
+        returnedValue = {
+            'good_reps': '0',
+            'bad_reps': '0',
+            'total_reps': '0',
+            'avg_peak_angle': -1,
+            'avg_descent_angle': -1,
+        }
+        returnedValue = count_reps_and_track_extremes(frameSet,stateSet)
+        
+
+
+# {
+#             'good_reps': good_reps,
+#             'bad_reps': total_reps-good_reps,
+#             'total_reps':total_reps,
+#             'avg_peak_angle': avg_peak,
+#             'avg_descent_angle': avg_descent,
+#         }
+
+
+
+
+
+
+
+
+
         if exercise_type == "squat":
-            angles = [r['knee_angle'] for r in results]
-            avg_angle = np.mean(angles)
-            min_angle = np.min(angles)
             
             return {
                 'exercise': 'squat',
-                'total_frames_analyzed': len(results),
-                'average_knee_angle': round(avg_angle, 1),
-                'deepest_squat_angle': round(min_angle, 1),
-                'overall_feedback': "Great form!" if min_angle < 90 else "Try to squat deeper"
+                'total_frames_analyzed': str(len(frameSet)*frameSkipped),
+                'average_peak_angle': str(returnedValue['avg_peak_angle']),
+                'average_descent_angle':str(returnedValue['avg_descent_angle']),
+                'overall_feedback': "Great form!" if returnedValue['avg_descent_angle'] < 90 else "Try to squat deeper! \n"
+                                    + f" total reps: {returnedValue['total_reps']}, good reps: {returnedValue['good_reps']}, bad reps: {returnedValue['bad_reps']}"
             }
         
         elif exercise_type == "pullup":
-            angles = [r['elbow_angle'] for r in results]
-            chin_above_count = sum(1 for r in results if r.get('chin_above_bar', False))
-            
-            avg_angle = np.mean(angles)
-            min_angle = np.min(angles)
-            completion_rate = (chin_above_count / len(results)) * 100
-            
-            return {
-                'exercise': 'pullup',
-                'total_frames_analyzed': len(results),
-                'average_elbow_angle': round(avg_angle, 1),
-                'best_elbow_angle': round(min_angle, 1),
-                'chin_above_bar_rate': round(completion_rate, 1),
-                'overall_feedback': "Excellent pull-ups!" if completion_rate > 70 and min_angle < 90 else "Focus on getting chin above bar consistently"
+            return {'exercise': 'pull',
+                    'total_frames_analyzed': str(len(frameSet)*frameSkipped),
+                    'average_peak_angle': str(returnedValue['avg_peak_angle']),
+                    'average_descent_angle':str(returnedValue['avg_descent_angle']),
+                    'overall_feedback': "Great form!" if returnedValue['avg_descent_angle'] < 90 else "Try to stretch at the bottom more! \n"
+                                       + f" total reps: {returnedValue['total_reps']}, good reps: {returnedValue['good_reps']}, bad reps: {returnedValue['bad_reps']}"
             }
-        
         elif exercise_type == "bench":
-            angles = [r['elbow_angle'] for r in results]
-            good_bar_path_count = sum(1 for r in results if r.get('bar_path_good', False))
             
-            avg_angle = np.mean(angles)
-            min_angle = np.min(angles)
-            bar_path_rate = (good_bar_path_count / len(results)) * 100
-            
-            return {
-                'exercise': 'bench',
-                'total_frames_analyzed': len(results),
-                'average_elbow_angle': round(avg_angle, 1),
-                'deepest_angle': round(min_angle, 1),
-                'good_bar_path_rate': round(bar_path_rate, 1),
-                'overall_feedback': "Great bench form!" if bar_path_rate > 80 and min_angle < 90 else "Focus on bar path and depth"
+            return {'exercise': 'bench',
+                    'total_frames_analyzed': str(len(frameSet)*frameSkipped),
+                    'average_peak_angle': str(returnedValue['avg_peak_angle']),
+                    'average_descent_angle':str(returnedValue['avg_descent_angle']),
+                    'overall_feedback': "Great form!" if returnedValue['avg_descent_angle'] < 90 else "Try to go lower on the bench! \n"
+                                       + f" total reps: {returnedValue['total_reps']}, good reps: {returnedValue['good_reps']}, bad reps: {returnedValue['bad_reps']}"
             }
-        
         return "Analysis complete"

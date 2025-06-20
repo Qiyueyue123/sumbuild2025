@@ -3,65 +3,64 @@ import mediapipe as mp
 import numpy as np
 import json
 import os
+from config import Config
+import google.generativeai as genai
+import logging
 
- #The number of frames you skip before analyzing the next frame. Dont put it too high or its not reflected well
+logger = logging.getLogger(__name__)
 
-
-#UTILITY FUNCTIONS
+# UTILITY FUNCTIONS
 
 def count_reps_and_track_extremes(angles, states):
-        good_reps = 0
-        total_reps = 0
-        state_buffer = []
+    good_reps = 0
+    total_reps = 0
+    state_buffer = []
 
-        peak_angles = []
-        descent_angles = []
+    peak_angles = []
+    descent_angles = []
 
-        for i in range(len(states)):
-            state = states[i]
-            if len(state_buffer) == 0 or state != state_buffer[len(state_buffer)-1]:
-                state_buffer.append(state)
+    for i in range(len(states)):
+        state = states[i]
+        if len(state_buffer) == 0 or state != state_buffer[len(state_buffer)-1]:
+            state_buffer.append(state)
 
-            if len(state_buffer) > 3:
-                state_buffer.pop(0)
+        if len(state_buffer) > 3:
+            state_buffer.pop(0)
 
-            pattern = ''.join(state_buffer)
+        pattern = ''.join(state_buffer)
 
-            if pattern == 'TOPMIDBOT':
-                good_reps += 1
-                total_reps += 1
-                state_buffer = []
+        # Repetition logic for various patterns
+        if pattern == 'TOPMIDBOT':
+            good_reps += 1
+            total_reps += 1
+            state_buffer = [] # Reset buffer after a successful rep
+        elif len(state_buffer) >= 2 and ''.join(state_buffer[-2:]) == 'MIDBOT':
+            total_reps += 1
+            # Do not reset buffer if it's only a partial rep completion, let it potentially complete with next states
+        elif len(state_buffer) == 3 and ''.join(state_buffer) == 'TOPMIDTOP':
+            total_reps += 1
+            state_buffer = [] # Reset for an incomplete but registered rep
 
-            elif len(state_buffer) >= 2 and ''.join(state_buffer[-2:]) == 'MIDBOT':
-                total_reps += 1
-                state_buffer = []
+        # Use 3-point local max/min check: angle[i-1], angle[i], angle[i+1]
+        # Ensure we have enough data points for comparison
+        if 0 < i < len(angles) - 1:
+            prev_a, curr_a, next_a = angles[i-1], angles[i], angles[i+1]
+            if curr_a > prev_a and curr_a > next_a: # Local maximum (peak)
+                peak_angles.append(curr_a)
+            elif curr_a < prev_a and curr_a < next_a: # Local minimum (descent/bottom)
+                descent_angles.append(curr_a)
 
-            elif len(state_buffer) == 3 and ''.join(state_buffer) == 'TOPMIDTOP':
-                total_reps += 1
-                state_buffer = []
+    # Calculate averages
+    avg_peak = sum(peak_angles) / len(peak_angles) if peak_angles else None
+    avg_descent = sum(descent_angles) / len(descent_angles) if descent_angles else None
 
-            # Use 3-point local max/min check: angle[i-1], angle[i], angle[i+1]
-            if 0 < i < len(angles) - 1:
-                prev_a, curr_a, next_a = angles[i-1], angles[i], angles[i+1]
-                if curr_a > prev_a and curr_a > next_a:
-                    peak_angles.append(curr_a)
-                elif curr_a < prev_a and curr_a < next_a:
-                    descent_angles.append(curr_a)
-
-        # Calculate averages
-        avg_peak = sum(peak_angles) / len(peak_angles) if peak_angles else None
-        avg_descent = sum(descent_angles) / len(descent_angles) if descent_angles else None
-
-        return {
-            'good_reps': str(good_reps),
-            'bad_reps': str(total_reps-good_reps),
-            'total_reps': str(total_reps),
-            'avg_peak_angle': round(avg_peak, 2), 
-            'avg_descent_angle': round(avg_descent, 2) 
-        }
-
-
-
+    return {
+        'good_reps': str(good_reps),
+        'bad_reps': str(total_reps - good_reps),
+        'total_reps': str(total_reps),
+        'avg_peak_angle': round(avg_peak, 2) if avg_peak is not None else -1,
+        'avg_descent_angle': round(avg_descent, 2) if avg_descent is not None else -1
+    }
 
 
 class GymFormAnalyzer:
@@ -75,21 +74,31 @@ class GymFormAnalyzer:
             min_detection_confidence=0.7,
             min_tracking_confidence=0.7
         )
-    
+        # Configure Gemini API once during initialization
+        try:
+            if not Config.GEMINI_API_KEY:
+                raise ValueError("Gemini API Key is not set in Config.")
+            genai.configure(api_key=Config.GEMINI_API_KEY)
+            self.gemini_model = genai.GenerativeModel("models/gemini-2.5-flash")
+            logger.info("Gemini API configured successfully using models/gemini-2.5-flash.")
+        except Exception as e:
+            logger.error(f"Failed to configure Gemini API: {e}. Gemini feedback will be unavailable.")
+            self.gemini_model = None # Set to None if configuration fails
+
     def calculate_angle(self, point1, point2, point3):
         """Calculate angle between three points"""
         a = np.array(point1)
         b = np.array(point2)
         c = np.array(point3)
-        
+
         radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
         angle = np.abs(radians * 180.0 / np.pi)
-        
+
         if angle > 180.0:
             angle = 360 - angle
-        
+
         return angle
-    
+
     def analyze_squat(self, landmarks):
         """Analyze squat form"""
         try:
@@ -100,189 +109,216 @@ class GymFormAnalyzer:
                     landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE.value].y]
             ankle = [landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
                      landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
-            
+
             # Calculate knee angle
             knee_angle = self.calculate_angle(hip, knee, ankle)
             return {
                 'angleToCheck': round(knee_angle, 1),
             }
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to analyze squat landmarks: {e}")
             return None
+
     def analyze_bench_or_pull(self, landmarks):
-        """Analyze bench press form"""
+        """Analyze bench press/pull-up form based on elbow angle"""
         try:
-            # Get key points for bench press
+            # Get key points for arm analysis (e.g., for bench press or pull-up)
+            # Using LEFT side for consistency, but good practice is to average both or pick visible one.
             left_shoulder = [landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                            landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                             landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
             left_elbow = [landmarks[self.mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
-                         landmarks[self.mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+                          landmarks[self.mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
             left_wrist = [landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST.value].x,
-                         landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST.value].y]
-            
+                          landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+
             # Calculate elbow angle
             elbow_angle = self.calculate_angle(left_shoulder, left_elbow, left_wrist)
-            
+
             return {
-                'angleToCheck' : elbow_angle
+                'angleToCheck': round(elbow_angle, 1)
             }
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to analyze bench/pull landmarks: {e}")
             return None
-    
-    def process_video(self, input_source, output_path, exercise_type="squat"):
-        """Process video and analyze form - works with S3 URLs or local files"""
-        cap = cv2.VideoCapture(input_source)  # OpenCV can handle URLs directly
-        
-        # Get video properties
+
+    def process_video(self, input_source, output_path=None, exercise_type="squat"):
+        cap = cv2.VideoCapture(input_source)
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        # Video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-        throttleValue = 0
-        frameSkipped = 2
-        analysis_results = []
+
+        if output_path:
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Use mp4v or XVID for better compatibility
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        else:
+            out = None
+
         frame_count = 0
-        list_of_frames = []
-        list_of_states = []
-        
+        throttleValue = 0
+        frameSkipped = 2 # Process every 3rd frame
+        analysis_results = []
+        list_of_frames = [] # Stores angles per relevant frame
+        list_of_states = [] # Stores states (TOP/MID/BOT) per relevant frame
+        keypoint_series = [] # Stores all landmark data for Gemini
+
         while cap.isOpened():
             success, image = cap.read()
             if not success:
                 break
-            
+
             frame_count += 1
-            if frame_count - throttleValue > frameSkipped:
-                # Convert BGR to RGB
+            if (frame_count - throttleValue) >= frameSkipped: # Use >= for consistent skipping
                 throttleValue = frame_count
                 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 image_rgb.flags.writeable = False
-                
-                # Process with MediaPipe
                 results = self.pose.process(image_rgb)
-                
-                # Convert back to BGR
                 image_rgb.flags.writeable = True
                 image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-                
-                # Analyze pose if detected
+
                 if results.pose_landmarks:
-                    # Draw pose landmarks
-                    self.mp_drawing.draw_landmarks(
-                        image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
-                    
-                    # Analyze form based on exercise type
+                    self.mp_drawing.draw_landmarks(image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
+
+                    landmarks = results.pose_landmarks.landmark
+                    # Optimized keypoint data for Gemini to reduce token count
+                    keypoint_series.append([
+                        {
+                            'x': round(lm.x, 3), # Round to 3 decimal places
+                            'y': round(lm.y, 3), # Round to 3 decimal places
+                            # 'z': round(lm.z, 3), # Removed 'z' for further token reduction
+                            # 'visibility': round(lm.visibility, 2) # Removed 'visibility' for token reduction
+                        }
+                        for lm in landmarks
+                    ])
+
+                    # Angle analysis
+                    analysis = None
                     if exercise_type == "squat":
-                        analysis = self.analyze_squat(results.pose_landmarks.landmark)
-                    elif exercise_type == "pullup":
-                        analysis = self.analyze_bench_or_pull(results.pose_landmarks.landmark)
-                    elif exercise_type == "bench":
-                        analysis = self.analyze_bench_or_pull(results.pose_landmarks.landmark)
+                        analysis = self.analyze_squat(landmarks)
+                    elif exercise_type in ["pullup", "bench"]: # Handle both with the same analysis method
+                        analysis = self.analyze_bench_or_pull(landmarks)
                     else:
-                        analysis = None
+                        logger.warning(f"Unknown exercise type: {exercise_type}. No specific analysis applied.")
+
                     angleOfCurrentState = analysis['angleToCheck'] if analysis else 0
 
-                    #0 is just defaulting to the bottom state
                     list_of_frames.append(angleOfCurrentState)
-                    currentState = 2
-                    if(angleOfCurrentState > 150):
-                        #implies that it is at the top
-                        currentState = 0
+                    currentState = 2 # Default to BOT/Rest if angle not clear
+                    if angleOfCurrentState > 150: # Example thresholds, adjust as needed
                         list_of_states.append('TOP')
-                    elif(angleOfCurrentState > 100):
-                        #implies that it is at the mid point
-                        currentState = 1
+                        currentState = 0
+                    elif angleOfCurrentState > 100: # Example thresholds
                         list_of_states.append('MID')
+                        currentState = 1
                     else:
-                        #quote on quote rest state
-                        currentState = 2
                         list_of_states.append('BOT')
+                        currentState = 2
 
-                    if analysis:
-                        analysis_results.append(analysis)
-                        
-                        # Draw analysis on frame based on exercise
-                        if exercise_type == "squat" or exercise_type == "pullup" or exercise_type == "bench":
-                            allStates = ['TOP','MID','BOT']
-                            colourTuple = (255 if currentState == 0 else 0,255 if currentState == 1 else 0,255 if currentState == 2 else 0)
-                            cv2.putText(image, f"Key Joint Angle: {round(angleOfCurrentState,4)}°", 
-                                    (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, colourTuple, 2)
-                            cv2.putText(image, allStates[currentState], 
-                                    (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, colourTuple, 2)
-                
-                out.write(image)
-            
-            
-            
-            # Generate summary
+                    if analysis and out: # Only draw if analysis was successful and output video is enabled
+                        all_states_labels = ['TOP', 'MID', 'BOT']
+                        colourTuple = (255 if currentState == 0 else 0, # Blue for TOP
+                                        255 if currentState == 1 else 0, # Green for MID
+                                        255 if currentState == 2 else 0) # Red for BOT
+                        cv2.putText(image, f"Angle: {round(angleOfCurrentState, 1)}°", (10, 50),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, colourTuple, 2)
+                        cv2.putText(image, all_states_labels[currentState], (10, 100),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, colourTuple, 2)
+
+                if out:
+                    out.write(image)
+
         cap.release()
-        out.release()
-        summary = self.generate_summary(list_of_frames,list_of_states, exercise_type)
+        if out:
+            out.release()
+
+        summary = self.generate_summary(list_of_frames, list_of_states, exercise_type)
+        gemini_feedback = self.send_to_gemini(keypoint_series, exercise_type)
+
         return {
-            'processed_video': output_path,
+            'processed_video': output_path if output_path else None,
             'analysis_results': analysis_results,
-            'summary': summary
+            'summary': summary,
+            'gemini_feedback': gemini_feedback
         }
-   
-        
+
+    def send_to_gemini(self, landmarks_series, exercise_type):
+        if not self.gemini_model:
+            return "Gemini API not configured. Cannot provide AI feedback."
+
+        # Reduced max_sample_frames for more aggressive token reduction
+        max_sample_frames = 25 # Target 25 frames for testing, adjust as needed
+        sample_frames = landmarks_series[::max(1, len(landmarks_series) // max_sample_frames)]
+        if len(sample_frames) > max_sample_frames:
+            sample_frames = sample_frames[:max_sample_frames]
+
+        # MODIFIED PROMPT: Instructing Gemini for concise, formatted, and visually appealing output
+        prompt = f"""
+        You are a virtual fitness coach specialized in analyzing exercise form.
+        The user has performed a {exercise_type}. I will provide you with a series of pose keypoints (x, y) for various frames.
+        Each frame contains data for 33 body keypoints, normalized to the image size (0.0 to 1.0).
+
+        Please provide a **concise and summarized analysis** of the {exercise_type} form, focusing on the most critical points.
+        Use clear, actionable language, and incorporate emojis, bolding, and bullet points to make it easy to read at a glance.
+        Keep the overall response under 200 words if possible.
+
+        Structure your feedback clearly in these sections:
+
+        ### 🎯 **Key Strengths**
+        - List 1-2 most significant good aspects.
+
+        ### 🚧 **Areas for Improvement**
+        - List 1-2 most critical areas needing work.
+
+        ### 💡 **Actionable Tips**
+        - Provide 1-3 concrete, actionable advice points.
+
+        ### ✨ **Overall Assessment**
+        - A very brief, encouraging summary.
+
+        Analyze the movement over time. Pay attention to joint angles, range of motion, and consistency based on the x and y coordinates provided.
+
+        Here is a sample of the pose data (list of dictionaries, each dictionary represents a frame's 33 keypoints):
+        {json.dumps(sample_frames, indent=2)}
+        """
+        try:
+            chat = self.gemini_model.start_chat()
+            response = chat.send_message(prompt)
+            return response.text
+        except Exception as e:
+            logger.error(f"Error calling Gemini API: {e}")
+            return f"Error getting feedback from AI: {str(e)}. Please check API key and network."
+
     def generate_summary(self, frameSet, stateSet, exercise_type):
-        frameSkipped = 2
+        frameSkipped = 2 # Assuming this is consistent with how frames were skipped during processing
         if not frameSet:
-            return "No pose detected in video"
-        returnedValue = {
-            'good_reps': '0',
-            'bad_reps': '0',
-            'total_reps': '0',
-            'avg_peak_angle': -1,
-            'avg_descent_angle': -1,
-        }
-        returnedValue = count_reps_and_track_extremes(frameSet,stateSet)
-        
-
-
-# {
-#             'good_reps': good_reps,
-#             'bad_reps': total_reps-good_reps,
-#             'total_reps':total_reps,
-#             'avg_peak_angle': avg_peak,
-#             'avg_descent_angle': avg_descent,
-#         }
-
-
-
-
-
-
-
-
-
-        if exercise_type == "squat":
-            
             return {
-                'exercise': 'squat',
-                'total_frames_analyzed': str(len(frameSet)*frameSkipped),
-                'average_peak_angle': str(returnedValue['avg_peak_angle']),
-                'average_descent_angle':str(returnedValue['avg_descent_angle']),
-                'overall_feedback': "Great form!" if returnedValue['avg_descent_angle'] < 90 else "Try to squat deeper! \n"
-                                    + f" total reps: {returnedValue['total_reps']}, good reps: {returnedValue['good_reps']}, bad reps: {returnedValue['bad_reps']}"
+                'exercise': exercise_type,
+                'total_frames_analyzed': '0',
+                'overall_feedback': "No pose detected in video. Please ensure the person is visible and well-lit.",
+                'good_reps': '0',
+                'bad_reps': '0',
+                'total_reps': '0',
+                'avg_peak_angle': '-1',
+                'avg_descent_angle': '-1'
             }
-        
+
+        returnedValue = count_reps_and_track_extremes(frameSet, stateSet)
+
+        # General feedback template
+        feedback = "Analysis complete."
+        if exercise_type == "squat":
+            feedback = "Great squat form!" if returnedValue['avg_descent_angle'] <= 90 and returnedValue['avg_descent_angle'] != -1 else "Try to squat deeper! Aim for knees around 90 degrees or below."
         elif exercise_type == "pullup":
-            return {'exercise': 'pull',
-                    'total_frames_analyzed': str(len(frameSet)*frameSkipped),
-                    'average_peak_angle': str(returnedValue['avg_peak_angle']),
-                    'average_descent_angle':str(returnedValue['avg_descent_angle']),
-                    'overall_feedback': "Great form!" if returnedValue['avg_descent_angle'] < 90 else "Try to stretch at the bottom more! \n"
-                                       + f" total reps: {returnedValue['total_reps']}, good reps: {returnedValue['good_reps']}, bad reps: {returnedValue['bad_reps']}"
-            }
+            feedback = "Excellent pull-up depth!" if returnedValue['avg_descent_angle'] <= 90 and returnedValue['avg_descent_angle'] != -1 else "Ensure full extension at the bottom of the pull-up."
         elif exercise_type == "bench":
-            
-            return {'exercise': 'bench',
-                    'total_frames_analyzed': str(len(frameSet)*frameSkipped),
-                    'average_peak_angle': str(returnedValue['avg_peak_angle']),
-                    'average_descent_angle':str(returnedValue['avg_descent_angle']),
-                    'overall_feedback': "Great form!" if returnedValue['avg_descent_angle'] < 90 else "Try to go lower on the bench! \n"
-                                       + f" total reps: {returnedValue['total_reps']}, good reps: {returnedValue['good_reps']}, bad reps: {returnedValue['bad_reps']}"
-            }
-        return "Analysis complete"
+            feedback = "Good bench press depth!" if returnedValue['avg_descent_angle'] <= 90 and returnedValue['avg_descent_angle'] != -1 else "Try to bring the bar lower to your chest for a full range of motion."
+
+        return {
+            'exercise': exercise_type,
+            'total_frames_analyzed': str(len(frameSet) * (frameSkipped + 1)), # +1 because 0-index skipped frames
+            'average_peak_angle': str(returnedValue['avg_peak_angle']),
+            'average_descent_angle': str(returnedValue['avg_descent_angle']),
+            'good_reps': returnedValue['good_reps'],
+            'bad_reps': returnedValue['bad_reps'],
+            'total_reps': returnedValue['total_reps'],
+            'overall_feedback': feedback
+        }

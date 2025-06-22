@@ -14,3 +14,6 @@ venv/
 
 # System files
 .DS_Store
+
+#external programs
+ffmpeg.exe

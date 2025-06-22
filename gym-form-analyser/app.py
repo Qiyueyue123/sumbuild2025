@@ -105,7 +105,7 @@ def analyze_video():
 
         logger.info(f"Downloaded video {s3_key} to temp file {tmp_path}")
 
-        raw_processed_filename = f"raw_processed_{s3_key}"
+        raw_processed_filename = f"processed_{s3_key}"
         raw_processed_path = os.path.join(tempfile.gettempdir(), raw_processed_filename)
 
         # Analyze/process video
@@ -113,11 +113,12 @@ def analyze_video():
         logger.info(f"Analysis complete. Raw processed saved to {raw_processed_path}")
 
         # Transcode to web-friendly format using ffmpeg
-        encoded_filename = f"processed_{s3_key}"
+        encoded_filename = f"encoded_{s3_key}"
         encoded_path = os.path.join(tempfile.gettempdir(), encoded_filename)
+        FFMPEG_PATH = os.path.join(os.getcwd(), "ffmpeg.exe")
 
         subprocess.run([
-            'ffmpeg', '-i', raw_processed_path,
+            FFMPEG_PATH, '-i', raw_processed_path,
             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
             '-c:a', 'aac', '-movflags', '+faststart',
             encoded_path

@@ -101,26 +101,56 @@
             width: 100%;
             max-width: 300px;
         }
-        /* New style for Gemini feedback */
+        /* New style for Gemini feedback container */
         .gemini-feedback {
             margin-top: 25px;
             padding-top: 15px;
             border-top: 1px dashed #ccc;
         }
-        .gemini-feedback h4 {
-            color: #007bff;
-            margin-bottom: 10px;
+        /* New styles for structured Gemini feedback */
+        .gemini-title {
+            color: #0056b3; /* Darker blue for main title */
+            margin-bottom: 15px;
+            font-size: 1.6em;
+            text-align: center;
         }
-        .gemini-feedback pre {
-            white-space: pre-wrap; /* Allows text to wrap */
-            word-wrap: break-word; /* Breaks long words */
-            background-color: #e9ecef;
+        .feedback-section {
+            margin-bottom: 20px;
             padding: 15px;
+            border-radius: 8px;
+            background-color: #f0f8ff; /* Light blue background for sections */
+            border: 1px solid #cceeff;
+        }
+        .feedback-section .section-title {
+            color: #007bff; /* Match primary button color */
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            gap: 8px; /* Space between emoji and text */
+        }
+        .feedback-list {
+            list-style: none; /* Remove default bullets */
+            padding-left: 0;
+            margin-top: 5px;
+        }
+        .feedback-list li {
+            background-color: #e6f7ff; /* Even lighter blue for list items */
+            margin-bottom: 8px;
+            padding: 10px 15px;
             border-radius: 5px;
-            font-size: 0.95em;
-            line-height: 1.6;
-            color: #343a40;
-            overflow-x: auto; /* For very long lines */
+            border-left: 3px solid #007bff;
+            display: flex; /* For potential icon/emoji alignment */
+            align-items: center;
+        }
+        .feedback-list li::before {
+            content: '•'; /* Custom bullet point */
+            color: #007bff;
+            font-weight: bold;
+            display: inline-block;
+            width: 1em;
+            margin-left: -1em; /* Negative margin to pull bullet into place */
         }
     </style>
 </head>
@@ -283,6 +313,53 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
+                    let geminiFeedbackHtml = '';
+                    if (data.gemini_feedback) {
+                        // Check if Gemini returned an error (e.g., quota exceeded)
+                        if (data.gemini_feedback.error) {
+                            geminiFeedbackHtml = `
+                                <div class="gemini-feedback">
+                                    <h4>AI Form Feedback by Gemini (Error)</h4>
+                                    <p style="color: red;">${data.gemini_feedback.error}</p>
+                                </div>
+                            `;
+                        } else {
+                            // Render structured Gemini feedback
+                            const feedback = data.gemini_feedback;
+                            geminiFeedbackHtml = `
+                                <div class="gemini-feedback">
+                                    <h4 class="gemini-title">${feedback.title || 'AI Form Analysis'}</h4>
+
+                                    <div class="feedback-section">
+                                        <h5 class="section-title">🎯 Key Strengths</h5>
+                                        <ul class="feedback-list">
+                                            ${feedback.strengths ? feedback.strengths.map(s => `<li>${s}</li>`).join('') : '<li>No specific strengths identified.</li>'}
+                                        </ul>
+                                    </div>
+
+                                    <div class="feedback-section">
+                                        <h5 class="section-title">🚧 Areas for Improvement</h5>
+                                        <ul class="feedback-list">
+                                            ${feedback.areas_for_improvement ? feedback.areas_for_improvement.map(i => `<li>${i}</li>`).join('') : '<li>No specific areas for improvement identified.</li>'}
+                                        </ul>
+                                    </div>
+
+                                    <div class="feedback-section">
+                                        <h5 class="section-title">💡 Actionable Tips</h5>
+                                        <ul class="feedback-list">
+                                            ${feedback.actionable_tips ? feedback.actionable_tips.map(t => `<li>${t}</li>`).join('') : '<li>No specific tips identified.</li>'}
+                                        </ul>
+                                    </div>
+
+                                    <div class="feedback-section">
+                                        <h5 class="section-title">✨ Overall Assessment</h5>
+                                        <p>${feedback.overall_assessment || 'Overall assessment not available.'}</p>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+
                     analysisResults.innerHTML = `
                         <h3>Analysis Results (Automated)</h3>
                         <div class="analysis-summary">
@@ -296,12 +373,7 @@
                             <p><strong>Overall Feedback:</strong> ${data.analysis.overall_feedback || 'No specific feedback available'}</p>
                         </div>
 
-                        ${data.gemini_feedback ? `
-                            <div class="gemini-feedback">
-                                <h4>AI Form Feedback by Gemini</h4>
-                                <pre>${data.gemini_feedback}</pre>
-                            </div>
-                        ` : ''}
+                        ${geminiFeedbackHtml}
 
                         ${data.processed_url ? `
                             <h4>Processed Video with Pose Detection:</h4>

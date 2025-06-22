@@ -242,7 +242,8 @@ class GymFormAnalyzer:
 
     def send_to_gemini(self, landmarks_series, exercise_type):
         if not self.gemini_model:
-            return "Gemini API not configured. Cannot provide AI feedback."
+            # Changed return type to dictionary to match successful JSON output structure
+            return {"error": "Gemini API not configured. Cannot provide AI feedback."}
 
         # Reduced max_sample_frames for more aggressive token reduction
         max_sample_frames = 25 # Target 25 frames for testing, adjust as needed
@@ -250,29 +251,42 @@ class GymFormAnalyzer:
         if len(sample_frames) > max_sample_frames:
             sample_frames = sample_frames[:max_sample_frames]
 
-        # MODIFIED PROMPT: Instructing Gemini for concise, formatted, and visually appealing output
+        # MODIFIED PROMPT: Explicitly instructing Gemini for JSON output with schema
         prompt = f"""
         You are a virtual fitness coach specialized in analyzing exercise form.
         The user has performed a {exercise_type}. I will provide you with a series of pose keypoints (x, y) for various frames.
         Each frame contains data for 33 body keypoints, normalized to the image size (0.0 to 1.0).
 
         Please provide a **concise and summarized analysis** of the {exercise_type} form, focusing on the most critical points.
-        Use clear, actionable language, and incorporate emojis, bolding, and bullet points to make it easy to read at a glance.
-        Keep the overall response under 200 words if possible.
+        Your response MUST be in JSON format, strictly following the schema provided below.
+        Do NOT include any other text or markdown outside the JSON object.
+        Embed relevant emojis directly into the string values where appropriate to add visual appeal.
 
-        Structure your feedback clearly in these sections:
-
-        ### 🎯 **Key Strengths**
-        - List 1-2 most significant good aspects.
-
-        ### 🚧 **Areas for Improvement**
-        - List 1-2 most critical areas needing work.
-
-        ### 💡 **Actionable Tips**
-        - Provide 1-3 concrete, actionable advice points.
-
-        ### ✨ **Overall Assessment**
-        - A very brief, encouraging summary.
+        **JSON Schema:**
+        ```json
+        {{
+          "title": "Gym Form Analysis - {exercise_type.capitalize()}",
+          "strengths": [
+            "string",
+            "string"
+          ],
+          "areas_for_improvement": [
+            "string",
+            "string"
+          ],
+          "actionable_tips": [
+            "string",
+            "string",
+            "string"
+          ],
+          "overall_assessment": "string"
+        }}
+        ```
+        -   **title**: A short, descriptive title for the analysis.
+        -   **strengths**: An array of 1-2 concise bullet points highlighting key good aspects. Each string should be self-contained.
+        -   **areas_for_improvement**: An array of 1-2 concise bullet points for critical areas needing work. Each string should be self-contained.
+        -   **actionable_tips**: An array of 1-3 concise, concrete, actionable advice points. Each string should be self-contained.
+        -   **overall_assessment**: A very brief, encouraging summary sentence.
 
         Analyze the movement over time. Pay attention to joint angles, range of motion, and consistency based on the x and y coordinates provided.
 
@@ -281,11 +295,24 @@ class GymFormAnalyzer:
         """
         try:
             chat = self.gemini_model.start_chat()
-            response = chat.send_message(prompt)
-            return response.text
+            # CRUCIAL: Set response_mime_type to application/json
+            response = chat.send_message(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            # Parse the JSON string from the response
+            feedback_data = json.loads(response.text)
+            return feedback_data # Return the parsed dictionary
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing Gemini JSON response: {e}. Raw response: {response.text if 'response' in locals() else 'N/A'}")
+            # Return an error dictionary that your frontend can check for
+            return {"error": f"AI response malformed. Failed to parse JSON: {e}"}
         except Exception as e:
             logger.error(f"Error calling Gemini API: {e}")
-            return f"Error getting feedback from AI: {str(e)}. Please check API key and network."
+            # Return an error dictionary
+            return {"error": f"Error getting feedback from AI: {str(e)}. Please check API key and network."}
 
     def generate_summary(self, frameSet, stateSet, exercise_type):
         frameSkipped = 2 # Assuming this is consistent with how frames were skipped during processing

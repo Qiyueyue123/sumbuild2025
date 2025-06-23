@@ -7,6 +7,11 @@ const NewWorkout = () => {
   const [exerciseType, setExerciseType] = useState("pushups");
   const [numSets, setNumSets] = useState(1);
   const [videos, setVideos] = useState(Array(1).fill(null));
+  const [workoutDate, setWorkoutDate] = useState(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return today;
+  });
+  const token = localStorage.getItem("token");
 
   const handleExerciseChange = (e) => {
     setExerciseType(e.target.value);
@@ -37,34 +42,38 @@ const NewWorkout = () => {
     setVideos(updatedVideos);
   };
   const handleAnalyze = async () => {
-  try {
-    const formData = new FormData();
-    formData.append("exercise_type", exerciseType);
-    formData.append("num_sets", numSets); 
+    try {
+      const formData = new FormData();
+      formData.append("workout_date", workoutDate);
+      formData.append("exercise_type", exerciseType);
+      formData.append("num_sets", numSets);
 
-    videos.forEach((video) => {
-      if (video) {
-        formData.append("video", video);
+      videos.forEach((video) => {
+        if (video) {
+          formData.append("video", video);
+        }
+      });
+
+      const response = await fetch("/upload_and_analyze", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert("Analysis complete!");
+        console.log("Result:", data);
+      } else {
+        alert("Error: " + data.error);
       }
-    });
-
-    const response = await fetch("/upload_and_analyze", {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await response.json();
-    if (data.success) {
-      alert("Analysis complete!");
-      console.log("Result:", data);
-    } else {
-      alert("Error: " + data.error);
+    } catch (error) {
+      console.error("Analysis failed:", error);
+      alert("An error occurred while analyzing.");
     }
-  } catch (error) {
-    console.error("Analysis failed:", error);
-    alert("An error occurred while analyzing.");
-  }
-};
+  };
 
   return (
     <div className="app-layout">
@@ -82,6 +91,15 @@ const NewWorkout = () => {
                 <option value="squats">Squats</option>
                 <option value="pullups">Pull-ups</option>
               </select>
+            </div>
+
+            <div className="form-section">
+              <label>Workout Date:</label>
+              <input
+                type="date"
+                value={workoutDate}
+                onChange={(e) => setWorkoutDate(e.target.value)}
+              />
             </div>
 
             <div className="form-section">

@@ -28,7 +28,7 @@ FRONTEND_DIST = os.path.join(BASE_DIR, '../frontend/dist')
 app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path='')
 
 app.config.from_object(Config)
-print(app.static_folder)
+
 # Initialize S3 client
 s3_client = boto3.client(
     's3',
@@ -80,7 +80,6 @@ def verify_token():
 @app.route('/register', methods=['POST'])
 def register_user():
     data = request.json
-    print("received: ", data)
     user_id = data.get('user_id')
     email = data.get('email')
     password = data.get('password')
@@ -139,6 +138,7 @@ def login():
     })
 
 @app.route('/upload_and_analyze', methods=['POST'])
+@token_required
 def upload_and_analyze():
     videos = request.files.getlist("video")
     logger.info(f"Received {len(videos)} video files")
@@ -150,12 +150,13 @@ def upload_and_analyze():
 
     exercise_type = request.form.get("exercise_type", "squat").lower()
     num_sets = request.form.get("num_sets", '1')
-    #date = request.form.get("date", datetime.today)
+    workout_date = request.form.get("workout_date", datetime.today)
+    total = 0
+    total_good = 0
 
     logger.info(f"Exercise type received: {exercise_type}")
     logger.info(f"Number of sets received: {num_sets}")
-    #logger.info(f"Workout Date: {date}")
-    logger.info(f"All form data: {dict(request.form)}")
+    logger.info(f"Workout Date received: {workout_date }")
 
     processed_results = []
 
@@ -166,10 +167,6 @@ def upload_and_analyze():
         if not allowed_file(file.filename):
             logger.warning(f"Invalid file skipped: {file.filename}")
             continue
-
-        local_input_path = None
-        raw_processed_path = None
-        encoded_path = None
 
         try:
             file_extension = file.filename.rsplit('.', 1)[1].lower()
@@ -212,11 +209,15 @@ def upload_and_analyze():
             logger.info(f"Uploaded processed video to {processed_url}")
 
             processed_results.append({
-                'video_filename': file.filename,
                 'processed_url': processed_url,
                 'analysis': result.get('summary', {}),
                 'gemini_feedback': result.get('gemini_feedback', 'No AI feedback available')
             })
+
+            good_reps= int(result.get('summary', {}).get('good_reps',0))
+            set_reps= int(result.get('summary', {}).get('total_reps',0))
+            total_good += good_reps
+            total += set_reps
 
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg error: {e.stderr.decode()}")
@@ -235,17 +236,21 @@ def upload_and_analyze():
                     except Exception as cleanup_err:
                         logger.warning(f"Failed to delete temp file {path}: {cleanup_err}")
 
+    #save to db
+    score = (total_good/total)*100
+    workout = {
+        'num_sets' : num_sets,
+        'results' : processed_results,
+        'score' : score       
+                }
+    db.users.update_one({'user_id': request.user_id}, {'$push':{f"workouts.{workout_date}":workout}})
     return jsonify({'success': True, 'results': processed_results})
 
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react(path):
-    print(f"Request path: {path}")
     full_path = os.path.join(app.static_folder, path)
-    print(f"Resolved to: {full_path}")
-    print('REACHED THE CATCHALL')
-
     if path != "" and os.path.exists(full_path):
         return send_from_directory(app.static_folder, path)
     else:

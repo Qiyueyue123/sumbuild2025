@@ -192,9 +192,9 @@ class GymFormAnalyzer:
 
                     # Angle analysis
                     analysis = None
-                    if exercise_type == "squat":
+                    if exercise_type == "squats":
                         analysis = self.analyze_squat(landmarks)
-                    elif exercise_type in ["pullup", "bench"]: # Handle both with the same analysis method
+                    elif exercise_type in ["pullups", "pushups"]: # Handle both with the same analysis method
                         analysis = self.analyze_bench_or_pull(landmarks)
                     else:
                         logger.warning(f"Unknown exercise type: {exercise_type}. No specific analysis applied.")

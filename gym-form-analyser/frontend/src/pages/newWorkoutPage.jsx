@@ -40,11 +40,15 @@ const NewWorkout = () => {
   try {
     const formData = new FormData();
     formData.append("exercise_type", exerciseType);
-    videos.forEach((video, idx) => {
-      formData.append("video" + (idx + 1), video);
+    formData.append("num_sets", numSets); 
+
+    videos.forEach((video) => {
+      if (video) {
+        formData.append("video", video);
+      }
     });
 
-    const response = await fetch("http://localhost:5000/analyze", {
+    const response = await fetch("/upload_and_analyze", {
       method: "POST",
       body: formData,
     });
@@ -61,7 +65,6 @@ const NewWorkout = () => {
     alert("An error occurred while analyzing.");
   }
 };
-
 
   return (
     <div className="app-layout">

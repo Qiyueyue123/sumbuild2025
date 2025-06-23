@@ -9,7 +9,6 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("handleSubmit reached");
 
     try {
       console.log("Sending fetch request...");
@@ -25,11 +24,9 @@ const Login = () => {
       });
 
       const data = await res.json();
-      console.log("Received response:", data);
 
       if (res.ok) {
         localStorage.setItem('token', data.token);
-        console.log(data.token)
         navigate("/dashboard");
       } else {
         alert(data.error || "login failed.");

@@ -5,7 +5,7 @@ config.py
 # Python
 __pycache__/
 *.py[cod]
-venv310/
+venv/
 *.env
 
 # IDE files

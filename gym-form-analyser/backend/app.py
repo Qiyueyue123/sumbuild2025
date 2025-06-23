@@ -1,8 +1,13 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import os
 import boto3
+from pymongo import MongoClient
+from functools import wraps
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from config import Config
+import jwt
 import uuid
 import tempfile
 from video_processor import GymFormAnalyzer 
@@ -13,9 +18,17 @@ import subprocess
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
-app.config.from_object(Config)
+#configure mongodb stuff
+client = MongoClient(Config.MONGO_URI)
+db = client['summbuild']
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+FRONTEND_DIST = os.path.join(BASE_DIR, '../frontend/dist')
+
+app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path='')
+
+app.config.from_object(Config)
+print(app.static_folder)
 # Initialize S3 client
 s3_client = boto3.client(
     's3',
@@ -34,9 +47,97 @@ analyzer = GymFormAnalyzer()
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/')
-def home():
-    return render_template('index.html')
+#ROUTES
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get('Authorization', '')
+        parts = auth_header.split()
+
+        if len(parts) != 2 or parts[0] != 'Bearer':
+            return jsonify({'error': 'Missing or invalid token format'}), 401
+
+        token = parts[1]
+
+        try:
+            decoded = jwt.decode(token, app.config['JWT_SECRET_KEY'], algorithms=["HS256"])
+            request.user_id = decoded['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+@app.route('/verify-token', methods=['GET'])
+@token_required
+def verify_token():
+    return jsonify({'valid': True, 'user_id': request.user_id})
+
+
+@app.route('/register', methods=['POST'])
+def register_user():
+    data = request.json
+    print("received: ", data)
+    user_id = data.get('user_id')
+    email = data.get('email')
+    password = data.get('password')
+
+    if not user_id or not email or not password:
+        return jsonify({'error': 'Missing fields'}), 400
+
+    # Check for duplicates
+    if db.users.find_one({'user_id': user_id}) or db.users.find_one({'email': email}):
+        return jsonify({'error': 'User already exists'}), 409
+
+    password_hash = generate_password_hash(password)
+
+    user_doc = {
+        "user_id": user_id,
+        "email": email,
+        "password_hash": password_hash,
+        "profile": {
+            "created_at": datetime.utcnow(),
+            "last_login": None,
+            "workout_stats": {},
+        }
+    }
+
+    db.users.insert_one(user_doc)
+    return jsonify({'message': 'Account created successfully'}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    user_id = data.get('user_id')
+    password = data.get('password')
+
+    if not user_id or not password:
+        return jsonify({'error': 'Missing user_id or password'}), 400
+
+    user = db.users.find_one({'user_id': user_id})
+    if not user:
+        return jsonify({'error': 'User account does not exist'}), 404
+
+    if not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'Wrong password'}), 401
+
+    # Generate JWT
+    expires_in = int(app.config['JWT_ACCESS_TOKEN_EXPIRES']) #based on wtv i set in config
+    token_payload = {
+        'user_id': user_id,
+        'exp': datetime.utcnow() + timedelta(seconds=expires_in)  #session token valid for 2 hrs (based on config settings)
+    }
+
+    token = jwt.encode(token_payload, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+
+    return jsonify({
+        'message': 'Login successful',
+        'token': token
+    })
 
 @app.route('/upload', methods=['POST'])
 def upload_video():
@@ -166,6 +267,24 @@ def analyze_video():
                     logger.info(f"Deleted temp file {path}")
                 except Exception as cleanup_err:
                     logger.warning(f"Failed to delete temp file {path}: {cleanup_err}")
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react(path):
+    print(f"Request path: {path}")
+    full_path = os.path.join(app.static_folder, path)
+    print(f"Resolved to: {full_path}")
+    print('REACHED THE CATCHALL')
+
+    if path != "" and os.path.exists(full_path):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
+    
+@app.errorhandler(404)
+def not_found(e):
+    return app.send_static_file('index.html')
 
 if __name__ == '__main__':
     # Ensure all environment variables are set before running.

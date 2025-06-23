@@ -156,7 +156,6 @@ class GymFormAnalyzer:
         frame_count = 0
         throttleValue = 0
         frameSkipped = 2 # Process every 3rd frame
-        analysis_results = []
         list_of_frames = [] # Stores angles per relevant frame
         list_of_states = [] # Stores states (TOP/MID/BOT) per relevant frame
         keypoint_series = [] # Stores all landmark data for Gemini
@@ -235,7 +234,6 @@ class GymFormAnalyzer:
 
         return {
             'processed_video': output_path if output_path else None,
-            'analysis_results': analysis_results,
             'summary': summary,
             'gemini_feedback': gemini_feedback
         }
@@ -332,12 +330,12 @@ class GymFormAnalyzer:
 
         # General feedback template
         feedback = "Analysis complete."
-        if exercise_type == "squat":
+        if exercise_type == "squats":
             feedback = "Great squat form!" if returnedValue['avg_descent_angle'] <= 90 and returnedValue['avg_descent_angle'] != -1 else "Try to squat deeper! Aim for knees around 90 degrees or below."
-        elif exercise_type == "pullup":
+        elif exercise_type == "pullups":
             feedback = "Excellent pull-up depth!" if returnedValue['avg_descent_angle'] <= 90 and returnedValue['avg_descent_angle'] != -1 else "Ensure full extension at the bottom of the pull-up."
-        elif exercise_type == "bench":
-            feedback = "Good bench press depth!" if returnedValue['avg_descent_angle'] <= 90 and returnedValue['avg_descent_angle'] != -1 else "Try to bring the bar lower to your chest for a full range of motion."
+        elif exercise_type == "pushups":
+            feedback = "Good push up depth!" if returnedValue['avg_descent_angle'] <= 90 and returnedValue['avg_descent_angle'] != -1 else "Try to go lower for a full range of motion."
 
         return {
             'exercise': exercise_type,

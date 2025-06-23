@@ -150,9 +150,11 @@ def upload_and_analyze():
 
     exercise_type = request.form.get("exercise_type", "squat").lower()
     num_sets = request.form.get("num_sets", '1')
+    #date = request.form.get("date", datetime.today)
 
     logger.info(f"Exercise type received: {exercise_type}")
     logger.info(f"Number of sets received: {num_sets}")
+    #logger.info(f"Workout Date: {date}")
     logger.info(f"All form data: {dict(request.form)}")
 
     processed_results = []
@@ -178,7 +180,7 @@ def upload_and_analyze():
                 local_input_path = tmp_file.name
 
             logger.info(f"Uploaded file saved temporarily to {local_input_path}")
-
+    
             raw_processed_filename = f"raw_processed_{unique_filename}"
             raw_processed_path = os.path.join(tempfile.gettempdir(), raw_processed_filename)
 

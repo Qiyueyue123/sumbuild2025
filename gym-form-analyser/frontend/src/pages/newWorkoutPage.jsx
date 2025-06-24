@@ -131,10 +131,19 @@ const NewWorkout = () => {
                 onChange={(e) => setWorkoutDate(e.target.value)}
               />
             </div>
-            
+            <div className="form-section">
+              <label>Number of Sets:</label>
+              <input
+                type="number"
+                min="1"
+                value={numSets}
+                onChange={handleSetChange}
+              />
+
+            </div>
 
             <div className="form-section">
-              
+
                 <label>Analysis Mode:</label>
                 <div style={{ display: 'flex', borderRadius: '6px', overflow: 'hidden', width: 'fit-content', border: '1px solid #aaa' }}>
                   <button

@@ -137,6 +137,13 @@ def login():
         'token': token
     })
 
+@app.route('/all_workouts', methods = ['GET'])
+@token_required
+def all_workouts():
+    user = db.users.find_one({"user_id" : request.user_id})
+    workouts = user.get("workouts", [])
+    return jsonify(workouts)
+
 @app.route('/upload_and_analyze', methods=['POST'])
 @token_required
 def upload_and_analyze():

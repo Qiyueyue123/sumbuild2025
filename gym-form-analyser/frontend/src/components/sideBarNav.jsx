@@ -7,7 +7,7 @@ const SidebarNav = () => {
       <nav className="sidebar-links">
         <NavLink to="/dashboard">Dashboard</NavLink>
         <NavLink to="/new-workout">New Workout</NavLink>
-        <NavLink to="/historyPage">Workout Logs</NavLink>
+        <NavLink to="/workout-logs">Workout Logs</NavLink>
         <NavLink to="/calendarPage">Calendar</NavLink>
         <NavLink to="/profilePage">Profile</NavLink>
       </nav>

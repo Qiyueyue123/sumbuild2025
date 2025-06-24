@@ -6,51 +6,49 @@ import os
 from config import Config
 import google.generativeai as genai
 import logging
+from typing import List, Literal
 
 logger = logging.getLogger(__name__)
 
 # UTILITY FUNCTIONS
-
+def get_visible_side(lm, left_idx, right_idx):
+    """Returns the index of the more visible landmark."""
+    return left_idx if lm[left_idx][3] >= lm[right_idx][3] else right_idx
 def count_reps_and_track_extremes(angles, states):
     good_reps = 0
     total_reps = 0
-    state_buffer = []
 
     peak_angles = []
     descent_angles = []
 
+    last_bot_idx = None
+
     for i in range(len(states)):
         state = states[i]
-        if len(state_buffer) == 0 or state != state_buffer[len(state_buffer)-1]:
-            state_buffer.append(state)
 
-        if len(state_buffer) > 3:
-            state_buffer.pop(0)
+        # Track the index of the most recent BOT
+        if state == "BOT":
+            last_bot_idx = i
 
-        pattern = ''.join(state_buffer)
+        # If we reach a TOP after a BOT, count as rep
+        elif state == "TOP" and last_bot_idx is not None:
+            bot_angle = angles[last_bot_idx]
+            top_angle = angles[i]
 
-        # Repetition logic for various patterns
-        if pattern == 'TOPMIDBOT':
-            good_reps += 1
             total_reps += 1
-            state_buffer = [] # Reset buffer after a successful rep
-        elif len(state_buffer) >= 2 and ''.join(state_buffer[-2:]) == 'MIDBOT':
-            total_reps += 1
-            # Do not reset buffer if it's only a partial rep completion, let it potentially complete with next states
-        elif len(state_buffer) == 3 and ''.join(state_buffer) == 'TOPMIDTOP':
-            total_reps += 1
-            state_buffer = [] # Reset for an incomplete but registered rep
+            if bot_angle <= 90 and top_angle >= 160:
+                good_reps += 1
 
-        # Use 3-point local max/min check: angle[i-1], angle[i], angle[i+1]
-        # Ensure we have enough data points for comparison
+            last_bot_idx = None  # reset for next rep
+
+        # Track local max/min for angle trends
         if 0 < i < len(angles) - 1:
-            prev_a, curr_a, next_a = angles[i-1], angles[i], angles[i+1]
-            if curr_a > prev_a and curr_a > next_a: # Local maximum (peak)
+            prev_a, curr_a, next_a = angles[i - 1], angles[i], angles[i + 1]
+            if curr_a > prev_a and curr_a > next_a:
                 peak_angles.append(curr_a)
-            elif curr_a < prev_a and curr_a < next_a: # Local minimum (descent/bottom)
+            elif curr_a < prev_a and curr_a < next_a:
                 descent_angles.append(curr_a)
 
-    # Calculate averages
     avg_peak = sum(peak_angles) / len(peak_angles) if peak_angles else None
     avg_descent = sum(descent_angles) / len(descent_angles) if descent_angles else None
 
@@ -98,45 +96,186 @@ class GymFormAnalyzer:
             angle = 360 - angle
 
         return angle
+    Landmarks = List[List[List[float]]]  # Each frame: 33 landmarks [x, y, z]
+    States = List[Literal["top", "mid", "bot"]]
+    Exercise = Literal["squat", "pushups", "pullups"]
+
+    def evaluate_form(self, landmarks: Landmarks, states: States, exercise: Exercise) -> float:
+        
+        if len(states) < 3:
+            return 0.0
+        if len(landmarks) != len(states):
+            return 0.0
+       
+
+        
+
+        # Define landmark indices for each key joint (both left and right)
+        indices = {
+            "nose": 0,
+            "left_shoulder": 11,
+            "right_shoulder": 12,
+            "left_hip": 23,
+            "right_hip": 24,
+            "left_knee": 25,
+            "right_knee": 26,
+            "left_ankle": 27,
+            "right_ankle": 28,
+            "left_elbow": 13,
+            "right_elbow": 14,
+            "left_wrist": 15,
+            "right_wrist": 16
+        }
+
+        scores = []
+
+        for i, lm in enumerate(landmarks):
+            state = states[i]
+
+            # Function to select best side based on visibility
+            def select_best_side(left_idx, right_idx):
+                left_vis = lm[left_idx][3] if len(lm[left_idx]) > 3 else lm[left_idx].visibility
+                right_vis = lm[right_idx][3] if len(lm[right_idx]) > 3 else lm[right_idx].visibility
+                return left_idx if left_vis >= right_vis else right_idx
+
+            # Select most visible side for each joint
+            shoulder_idx = select_best_side(indices["left_shoulder"], indices["right_shoulder"])
+            hip_idx = select_best_side(indices["left_hip"], indices["right_hip"])
+            knee_idx = select_best_side(indices["left_knee"], indices["right_knee"])
+            ankle_idx = select_best_side(indices["left_ankle"], indices["right_ankle"])
+            elbow_idx = select_best_side(indices["left_elbow"], indices["right_elbow"])
+            wrist_idx = select_best_side(indices["left_wrist"], indices["right_wrist"])
+
+            # Required landmark indices based on exercise and state
+            required = [indices["nose"], shoulder_idx, hip_idx, knee_idx]
+
+            if exercise != "squats":
+                required += [elbow_idx, wrist_idx]
+
+            if exercise == "pushups":
+                required += [ankle_idx]
+            if any(lm[idx][3] < 0.7 for idx in required):
+                continue
+
+            # Angles using selected sides
+            spinal_angle = self.calculate_angle(lm[indices["nose"]], lm[shoulder_idx], lm[hip_idx])
+            hip_angle = self.calculate_angle(lm[shoulder_idx], lm[hip_idx], lm[knee_idx])
+
+            spinal_score = 1.0 if 140 <= spinal_angle <= 170 else max(0.0, 1-abs(spinal_angle-155)/155)
+           
+            if exercise == "squats":
+                hip_score = 1.0 if 70 <= hip_angle <= 100 else max(0.0, 1-abs(hip_angle-85)/85)
+            else:
+                hip_score = 1.0 if 160 <= hip_angle <= 180 else max(0.0, 1-abs(hip_angle -170)/170)
+           
+
+            # Joint scoring using selected sides
+            joint_score = 1.0
+            if state in ["TOP", "BOT"]:
+                if exercise == "squats":
+                    joint_angle = self.calculate_angle(lm[hip_idx], lm[knee_idx], lm[ankle_idx])
+                else:
+                    joint_angle = self.calculate_angle(lm[shoulder_idx], lm[elbow_idx], lm[wrist_idx])
+
+                if state == "BOT":
+                    joint_score = 1.0 if joint_angle <= 90 else -1.0
+                elif state == "TOP":  # top
+                    joint_score = 1.0 if joint_angle >= 160 else -1.0
+                else:
+                    joint_score = 1.0
+
+            # Extra for pushups using selected side
+            extra_score = 1.0
+            if exercise == "pushups":
+                leg_line_angle = self.calculate_angle(lm[hip_idx], lm[knee_idx], lm[ankle_idx])
+                extra_score = 1.0 if 140 <= leg_line_angle <= 180 else max(0.0, 1 - (140 - leg_line_angle)/140)
+
+            # Final score
+            if state not in ["TOP","BOT"]:
+                
+                score = (spinal_score +hip_score +extra_score) if exercise == "pushups" else (spinal_score +hip_score)
+                score = score/3 if exercise == "pushups" else score/2
+            else:
+                
+                score = (joint_score)
+                
+            scores.append(score)
+
+        return max(0.100,round(np.mean(scores),3)) if scores else 0.0
+    
 
     def analyze_squat(self, landmarks):
-        """Analyze squat form"""
         try:
-            # Get key points
-            hip = [landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                   landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value].y]
-            knee = [landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                    landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-            ankle = [landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                     landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+            PL = self.mp_pose.PoseLandmark
 
-            # Calculate knee angle
+# Check visibilities
+            hip_vis = landmarks[PL.LEFT_HIP.value].visibility
+            knee_vis = landmarks[PL.LEFT_KNEE.value].visibility
+            ankle_vis = landmarks[PL.LEFT_ANKLE.value].visibility
+
+            right_hip_vis = landmarks[PL.RIGHT_HIP.value].visibility
+            right_knee_vis = landmarks[PL.RIGHT_KNEE.value].visibility
+            right_ankle_vis = landmarks[PL.RIGHT_ANKLE.value].visibility
+
+            # Use side with higher visibility, but only if one is confidently visible
+            if max(hip_vis, right_hip_vis) < 0.7 or max(knee_vis, right_knee_vis) < 0.7 or max(ankle_vis, right_ankle_vis) < 0.7:
+                return None  # or handle as a skipped frame
+
+            # Select most visible side for each
+            hip = [landmarks[PL.LEFT_HIP.value].x, landmarks[PL.LEFT_HIP.value].y] \
+                if hip_vis >= right_hip_vis else \
+                [landmarks[PL.RIGHT_HIP.value].x, landmarks[PL.RIGHT_HIP.value].y]
+
+            knee = [landmarks[PL.LEFT_KNEE.value].x, landmarks[PL.LEFT_KNEE.value].y] \
+                if knee_vis >= right_knee_vis else \
+                [landmarks[PL.RIGHT_KNEE.value].x, landmarks[PL.RIGHT_KNEE.value].y]
+
+            ankle = [landmarks[PL.LEFT_ANKLE.value].x, landmarks[PL.LEFT_ANKLE.value].y] \
+                if ankle_vis >= right_ankle_vis else \
+                [landmarks[PL.RIGHT_ANKLE.value].x, landmarks[PL.RIGHT_ANKLE.value].y]
+
+            # Compute angle
             knee_angle = self.calculate_angle(hip, knee, ankle)
-            return {
-                'angleToCheck': round(knee_angle, 1),
-            }
+            return {'angleToCheck': round(knee_angle, 3)}
         except Exception as e:
             logger.warning(f"Failed to analyze squat landmarks: {e}")
             return None
 
+
     def analyze_bench_or_pull(self, landmarks):
-        """Analyze bench press/pull-up form based on elbow angle"""
         try:
-            # Get key points for arm analysis (e.g., for bench press or pull-up)
-            # Using LEFT side for consistency, but good practice is to average both or pick visible one.
-            left_shoulder = [landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                             landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            left_elbow = [landmarks[self.mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
-                          landmarks[self.mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
-            left_wrist = [landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST.value].x,
-                          landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+            PL = self.mp_pose.PoseLandmark
 
-            # Calculate elbow angle
-            elbow_angle = self.calculate_angle(left_shoulder, left_elbow, left_wrist)
+            # Check visibilities
+            left_shoulder_vis = landmarks[PL.LEFT_SHOULDER.value].visibility
+            right_shoulder_vis = landmarks[PL.RIGHT_SHOULDER.value].visibility
+            left_elbow_vis = landmarks[PL.LEFT_ELBOW.value].visibility
+            right_elbow_vis = landmarks[PL.RIGHT_ELBOW.value].visibility
+            left_wrist_vis = landmarks[PL.LEFT_WRIST.value].visibility
+            right_wrist_vis = landmarks[PL.RIGHT_WRIST.value].visibility
 
-            return {
-                'angleToCheck': round(elbow_angle, 1)
-            }
+            # Require at least one confident side
+            if max(left_shoulder_vis, right_shoulder_vis) < 0.7 or \
+            max(left_elbow_vis, right_elbow_vis) < 0.7 or \
+            max(left_wrist_vis, right_wrist_vis) < 0.7:
+                return None
+
+            # Pick more visible side for each point
+            shoulder = [landmarks[PL.LEFT_SHOULDER.value].x, landmarks[PL.LEFT_SHOULDER.value].y] \
+                if left_shoulder_vis >= right_shoulder_vis else \
+                [landmarks[PL.RIGHT_SHOULDER.value].x, landmarks[PL.RIGHT_SHOULDER.value].y]
+
+            elbow = [landmarks[PL.LEFT_ELBOW.value].x, landmarks[PL.LEFT_ELBOW.value].y] \
+                if left_elbow_vis >= right_elbow_vis else \
+                [landmarks[PL.RIGHT_ELBOW.value].x, landmarks[PL.RIGHT_ELBOW.value].y]
+
+            wrist = [landmarks[PL.LEFT_WRIST.value].x, landmarks[PL.LEFT_WRIST.value].y] \
+                if left_wrist_vis >= right_wrist_vis else \
+                [landmarks[PL.RIGHT_WRIST.value].x, landmarks[PL.RIGHT_WRIST.value].y]
+
+            # Compute angle
+            elbow_angle = self.calculate_angle(shoulder, elbow, wrist)
+            return {'angleToCheck': round(elbow_angle, 3)}
         except Exception as e:
             logger.warning(f"Failed to analyze bench/pull landmarks: {e}")
             return None
@@ -159,26 +298,98 @@ class GymFormAnalyzer:
         list_of_frames = [] # Stores angles per relevant frame
         list_of_states = [] # Stores states (TOP/MID/BOT) per relevant frame
         keypoint_series = [] # Stores all landmark data for Gemini
-
+        keypointSeriesForImportantFrames = []
+        lastPeakOrDescent = 'MID'
         while cap.isOpened():
             success, image = cap.read()
             if not success:
                 break
-
             frame_count += 1
-            if (frame_count - throttleValue) >= frameSkipped: # Use >= for consistent skipping
-                throttleValue = frame_count
+            if (frame_count - 1) % (frameSkipped + 1) == 0:  # process every 3rd frame
                 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 image_rgb.flags.writeable = False
                 results = self.pose.process(image_rgb)
                 image_rgb.flags.writeable = True
-                image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-
+                
                 if results.pose_landmarks:
-                    self.mp_drawing.draw_landmarks(image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
-
+                    landmarks = results.pose_landmarks.landmark
                     landmarks = results.pose_landmarks.landmark
                     # Optimized keypoint data for Gemini to reduce token count
+                    
+                    if exercise_type == "squats":
+                        analysis = self.analyze_squat(landmarks)
+                    elif exercise_type in ["pullups", "pushups"]:
+                        analysis = self.analyze_bench_or_pull(landmarks)
+                    else:
+                        analysis = None
+
+                    angleOfCurrentState = analysis['angleToCheck'] if analysis else 0
+                    if len(list_of_frames) == 0:
+                        list_of_frames = [angleOfCurrentState]
+                        list_of_states = ['MID']
+                        keypointSeriesForImportantFrames.append([
+                            [round(lm.x, 3), round(lm.y, 3), round(lm.z, 3), round(lm.visibility, 3)]
+                            for lm in landmarks
+                        ])
+
+                    elif abs(list_of_frames[len(list_of_frames)-1] - angleOfCurrentState) > 5:
+                        
+                        keypointSeriesForImportantFrames.append([
+                            [round(lm.x, 3), round(lm.y, 3), round(lm.z, 3), round(lm.visibility, 3)]
+                            for lm in landmarks
+                        ])
+                        
+                        lastStateIndex = len(list_of_states)-1
+                        lastState = list_of_states[lastStateIndex]
+                        lastAngleIndex = len(list_of_frames)-1
+                        lastAngle = list_of_frames[lastAngleIndex]
+                        list_of_frames.append(angleOfCurrentState)
+                        if lastState == 'TOP':
+                            if angleOfCurrentState < lastAngle:
+                                list_of_states.append('MID')
+                                #top means apex of ROM or eccentric stage so next is mid
+                                
+                            else:
+                                list_of_states[lastAngleIndex] = 'MID'
+                                #convert it to a transition
+                                list_of_states.append('TOP')
+                                
+                                #mid simply signifies a transition not necessarily the angle
+                        elif lastState == 'BOT':
+                            if angleOfCurrentState > lastAngle:
+                                list_of_states.append('MID')
+                                
+                            else:
+                                list_of_states[lastAngleIndex] = 'MID'
+                               
+                                list_of_states.append('BOT')
+                                #BOT means concentric stage or the bottom
+
+                                
+                        else:
+                            if angleOfCurrentState < lastAngle  and lastPeakOrDescent == 'TOP':
+                                lastPeakOrDescent = 'TOP'
+                                #convert it to a transition
+                                list_of_states.append('MID')
+                                #top means apex of ROM or eccentric stage
+                                #as you can see I copy pasted a ton
+                            elif angleOfCurrentState > lastAngle and lastPeakOrDescent == 'BOT':
+                                lastPeakOrDescent = 'BOT'
+                                list_of_states.append('MID')
+
+                            else:
+                                if angleOfCurrentState < lastAngle  and lastPeakOrDescent != 'TOP':
+                                    lastPeakOrDescent = 'TOP'
+                                    #the current value implies descending
+                                    list_of_states[lastAngleIndex] = 'MID'
+                                    
+                                    list_of_states.append('BOT')
+                                
+                                elif angleOfCurrentState > lastAngle and lastPeakOrDescent != 'BOT':
+                                    lastPeakOrDescent = 'BOT'
+                                    #the current value implies ascending
+                                    list_of_states[lastAngleIndex] = 'MID'
+                                    list_of_states.append('TOP') 
                     keypoint_series.append([
                         {
                             'x': round(lm.x, 3), # Round to 3 decimal places
@@ -187,40 +398,26 @@ class GymFormAnalyzer:
                             # 'visibility': round(lm.visibility, 2) # Removed 'visibility' for token reduction
                         }
                         for lm in landmarks
-                    ])
-
-                    # Angle analysis
-                    analysis = None
-                    if exercise_type == "squats":
-                        analysis = self.analyze_squat(landmarks)
-                    elif exercise_type in ["pullups", "pushups"]: # Handle both with the same analysis method
-                        analysis = self.analyze_bench_or_pull(landmarks)
-                    else:
-                        logger.warning(f"Unknown exercise type: {exercise_type}. No specific analysis applied.")
-
-                    angleOfCurrentState = analysis['angleToCheck'] if analysis else 0
-
-                    list_of_frames.append(angleOfCurrentState)
-                    currentState = 2 # Default to BOT/Rest if angle not clear
-                    if angleOfCurrentState > 150: # Example thresholds, adjust as needed
-                        list_of_states.append('TOP')
-                        currentState = 0
-                    elif angleOfCurrentState > 100: # Example thresholds
-                        list_of_states.append('MID')
-                        currentState = 1
-                    else:
-                        list_of_states.append('BOT')
-                        currentState = 2
-
+                        ])
+                    
+                    currentState = list_of_states[len(list_of_states)-1]
                     if analysis and out: # Only draw if analysis was successful and output video is enabled
                         all_states_labels = ['TOP', 'MID', 'BOT']
+                        currentState = all_states_labels.index(currentState)
                         colourTuple = (255 if currentState == 0 else 0, # Blue for TOP
                                         255 if currentState == 1 else 0, # Green for MID
                                         255 if currentState == 2 else 0) # Red for BOT
-                        cv2.putText(image, f"Angle: {round(angleOfCurrentState, 1)}°", (10, 50),
+                        cv2.putText(image, f"Angle: {round(angleOfCurrentState, 1)} deg", (10, 50),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1.2, colourTuple, 2)
                         cv2.putText(image, all_states_labels[currentState], (10, 100),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1.2, colourTuple, 2)
+                        self.mp_drawing.draw_landmarks(
+                        image,
+                        results.pose_landmarks,
+                        self.mp_pose.POSE_CONNECTIONS,
+                        landmark_drawing_spec=self.mp_drawing.DrawingSpec(color=(0,255,0), thickness=2, circle_radius=2),
+                        connection_drawing_spec=self.mp_drawing.DrawingSpec(color=(0,0,255), thickness=2, circle_radius=2)
+                        )
 
                 if out:
                     out.write(image)
@@ -228,8 +425,8 @@ class GymFormAnalyzer:
         cap.release()
         if out:
             out.release()
-
-        summary = self.generate_summary(list_of_frames, list_of_states, exercise_type)
+        score = self.evaluate_form(keypointSeriesForImportantFrames, list_of_states, exercise_type)
+        summary = self.generate_summary(list_of_frames, list_of_states, exercise_type,score)
         gemini_feedback = self.send_to_gemini(keypoint_series, exercise_type)
 
         return {
@@ -312,7 +509,7 @@ class GymFormAnalyzer:
             # Return an error dictionary
             return {"error": f"Error getting feedback from AI: {str(e)}. Please check API key and network."}
 
-    def generate_summary(self, frameSet, stateSet, exercise_type):
+    def generate_summary(self, frameSet, stateSet, exercise_type,score = 0):
         frameSkipped = 2 # Assuming this is consistent with how frames were skipped during processing
         if not frameSet:
             return {
@@ -323,7 +520,8 @@ class GymFormAnalyzer:
                 'bad_reps': '0',
                 'total_reps': '0',
                 'avg_peak_angle': '-1',
-                'avg_descent_angle': '-1'
+                'avg_descent_angle': '-1',
+                'score': "0"
             }
 
         returnedValue = count_reps_and_track_extremes(frameSet, stateSet)
@@ -345,5 +543,6 @@ class GymFormAnalyzer:
             'good_reps': returnedValue['good_reps'],
             'bad_reps': returnedValue['bad_reps'],
             'total_reps': returnedValue['total_reps'],
-            'overall_feedback': feedback
+            'overall_feedback': feedback,
+            'score' : str(score) if score > 0.1 else "0"
         }

@@ -156,15 +156,24 @@ const NewWorkout = () => {
                         <div className="button-row">
                           <button onClick={() => handleRemoveVideo(index)}>Remove Video</button>
                         </div>
+                        
+                        
                       </div>
 
                       {analysisResults[index] && (
                         <div className="feedback-section">
+                          <div className="analyzed-video-container">
+                          {console.log("Video URL:", analysisResults[index])}
+                            <video controls>
+                              <source src={analysisResults[index]?.processedUrl} type="video/mp4" />
+                              Your browser does not support the video tag.
+                            </video>
+                          </div>
                           <p><strong> Good Reps / Total Reps:</strong> {analysisResults[index].analysis?.good_reps} / {analysisResults[index].analysis?.total_reps}</p>
                           <p><strong> Avg Peak Angle:</strong> {analysisResults[index].analysis?.average_peak_angle}</p>
                           <p><strong> Avg Descent Angle:</strong> {analysisResults[index].analysis?.average_descent_angle}</p>
                           <p><strong> Feedback:</strong> {analysisResults[index].analysis?.overall_feedback}</p>
-
+                          <p><strong> Score for set:</strong> {analysisResults[index].analysis?.score*100} %</p>
                           <h4> Gemini AI Feedback</h4>
                           {typeof analysisResults[index].geminiFeedback === "object" ? (
                             <>
@@ -176,7 +185,9 @@ const NewWorkout = () => {
                           ) : (
                             <p><strong>Gemini Feedback:</strong> {String(analysisResults[index].geminiFeedback)}</p>
                           )}
+                          
                         </div>
+
                       )}
                     </div>
 

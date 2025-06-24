@@ -159,7 +159,8 @@ def upload_and_analyze():
     logger.info(f"Workout Date received: {workout_date }")
 
     processed_results = []
-
+    total = 0
+    total_score = 0
     for file in videos:
         if file.filename == '':
             continue
@@ -207,16 +208,21 @@ def upload_and_analyze():
 
             processed_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{encoded_filename}"
             logger.info(f"Uploaded processed video to {processed_url}")
-
+            
             processed_results.append({
                 'processed_url': processed_url,
                 'analysis': result.get('summary', {}),
                 'gemini_feedback': result.get('gemini_feedback', 'No AI feedback available')
             })
-
-            good_reps= int(result.get('summary', {}).get('good_reps',0))
-            set_reps= int(result.get('summary', {}).get('total_reps',0))
-            total_good += good_reps
+            
+            good_reps= (result.get('summary', {}).get('score',0))
+            set_reps= 1 
+            float_value = 0.0
+            try:
+                float_value = float(good_reps)
+            except ValueError:
+                float_value = 0.0  # or handle it differently
+            total_score += float_value
             total += set_reps
 
         except subprocess.CalledProcessError as e:
@@ -237,7 +243,7 @@ def upload_and_analyze():
                         logger.warning(f"Failed to delete temp file {path}: {cleanup_err}")
 
     #save to db
-    score = (total_good/total)*100
+    score = (total_score/total)*100
     workout = {
         'num_sets' : num_sets,
         'results' : processed_results,

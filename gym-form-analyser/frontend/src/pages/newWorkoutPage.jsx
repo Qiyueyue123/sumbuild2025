@@ -5,6 +5,7 @@ import "../assets/styles/newWorkout.css";
 
 const NewWorkout = () => {
   const [exerciseType, setExerciseType] = useState("pushups");
+  const [analysisType, setAnalysisType] = useState("FULL")
   const [numSets, setNumSets] = useState(1);
   const [videos, setVideos] = useState(Array(1).fill(null));
   const [workoutDate, setWorkoutDate] = useState(() => {
@@ -12,13 +13,26 @@ const NewWorkout = () => {
     return today;
   });
   const token = localStorage.getItem("token");
+  const[analysisResults, setAnalysisResults] = useState([]);
+  const [totalScore, setTotalScore] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleExerciseChange = (e) => {
     setExerciseType(e.target.value);
   };
 
   const handleSetChange = (e) => {
-    const newNum = parseInt(e.target.value);
+    const value = e.target.value;
+
+    if (value === "") { //let user clear input
+      setNumSets(""); // temporarily allow empty string
+      return;
+    }
+
+    const newNum = parseInt(value);
+
+    if (isNaN(newNum) || newNum < 1) return; // for invalid num and zero
+
     setNumSets(newNum);
     setVideos((prev) => {
       const newVideos = [...prev];
@@ -42,11 +56,17 @@ const NewWorkout = () => {
     setVideos(updatedVideos);
   };
   const handleAnalyze = async () => {
+    setIsLoading(true);
+    setAnalysisResults([]);
+    setTotalScore(null);
     try {
+      
       const formData = new FormData();
       formData.append("workout_date", workoutDate);
       formData.append("exercise_type", exerciseType);
       formData.append("num_sets", numSets);
+      formData.append("analysisType",analysisType)
+      
 
       videos.forEach((video) => {
         if (video) {
@@ -63,15 +83,25 @@ const NewWorkout = () => {
       });
 
       const data = await response.json();
-      if (data.success) {
+
+      if (data.success && Array.isArray(data.results)) {
+        const mapped = data.results.map((r) => ({
+          analysis: r?.analysis || {},
+          geminiFeedback: r?.gemini_feedback || "No feedback",
+          processedUrl: r?.processed_url || "",
+        }));
+
+        setAnalysisResults(mapped);
+        setTotalScore(data.score);
         alert("Analysis complete!");
-        console.log("Result:", data);
-      } else {
-        alert("Error: " + data.error);
+      } else{
+        alert("Error: " + (data.error || "Unexpected server response"));
       }
-    } catch (error) {
+    }catch(error){
       console.error("Analysis failed:", error);
       alert("An error occurred while analyzing.");
+    }finally{
+      setIsLoading(false);
     }
   };
 
@@ -101,7 +131,6 @@ const NewWorkout = () => {
                 onChange={(e) => setWorkoutDate(e.target.value)}
               />
             </div>
-
             <div className="form-section">
               <label>Number of Sets:</label>
               <input
@@ -110,27 +139,100 @@ const NewWorkout = () => {
                 value={numSets}
                 onChange={handleSetChange}
               />
+
             </div>
+
+            <div className="form-section">
+
+                <label>Analysis Mode:</label>
+                <div style={{ display: 'flex', borderRadius: '6px', overflow: 'hidden', width: 'fit-content', border: '1px solid #aaa' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAnalysisType('QUICK')}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: analysisType === 'QUICK' ? '#4CAF50' : '#8B0000',
+                      color: 'white',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Quick
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAnalysisType('FULL')}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: analysisType === 'FULL' ? '#4CAF50' : '#8B0000',
+                      color: 'white',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Full
+                  </button>
+                </div>
+            </div>
+            {totalScore !== null && (
+              <div className="total-score-banner">
+                 <strong>Total Score for current workout:</strong> {totalScore}%
+              </div>
+            )}
 
             <div className="upload-section">
               {videos.map((video, index) => (
                 <div key={index} className="set-upload">
                   <h4>Set {index + 1}</h4>
                   {video ? (
-                    <div>
-                      <video width="300" controls>
-                        <source
-                          src={URL.createObjectURL(video)}
-                          type="video/mp4"
-                        />
-                        Your browser does not support the video tag.
-                      </video>
-                      <div className="button-row">
-                        <button onClick={() => handleRemoveVideo(index)}>
-                          Remove Video
-                        </button>
+                    <div className="video-feedback-row">
+                      <div className="video-container">
+                        <video controls>
+                          <source src={URL.createObjectURL(video)} type="video/mp4" />
+                          Your browser does not support the video tag.
+                        </video>
+                        <div className="button-row">
+                          <button onClick={() => handleRemoveVideo(index)}>Remove Video</button>
+                        </div>
+                        
+                        
                       </div>
+
+                      {analysisResults[index] && (
+                        <div className="feedback-section">
+                          {analysisResults[index]?.processedUrl && (
+                            <div className="analyzed-video-container">
+                          
+                            <video controls>
+                              <source src={analysisResults[index]?.processedUrl} type="video/mp4" />
+                              Your browser does not support the video tag.
+                            </video>
+                          </div>
+                          )}
+                          <p><strong> Good Reps / Total Reps:</strong> {analysisResults[index].analysis?.good_reps} / {analysisResults[index].analysis?.total_reps}</p>
+                          <p><strong> Avg Peak Angle:</strong> {analysisResults[index].analysis?.average_peak_angle}</p>
+                          <p><strong> Avg Descent Angle:</strong> {analysisResults[index].analysis?.average_descent_angle}</p>
+                          <p><strong> Feedback:</strong> {analysisResults[index].analysis?.overall_feedback}</p>
+                          <p><strong> Score for set:</strong> {analysisResults[index].analysis?.score*100} %</p>
+                          <h4> Gemini AI Feedback</h4>
+                          {typeof analysisResults[index].geminiFeedback === "object" ? (
+                            <>
+                              <p><strong> Strengths:</strong> {analysisResults[index].geminiFeedback?.strengths?.join(", ")}</p>
+                              <p><strong> Improvements:</strong> {analysisResults[index].geminiFeedback?.areas_for_improvement?.join(", ")}</p>
+                              <p><strong> Tips:</strong> {analysisResults[index].geminiFeedback?.actionable_tips?.join(", ")}</p>
+                              <p><strong> Overall:</strong> {analysisResults[index].geminiFeedback?.overall_assessment}</p>
+                            </>
+                          ) : (
+                            <p><strong>Gemini Feedback:</strong> {String(analysisResults[index].geminiFeedback)}</p>
+                          )}
+                          
+                        </div>
+
+                      )}
                     </div>
+
                   ) : (
                     <>
                       <label
@@ -154,10 +256,10 @@ const NewWorkout = () => {
             <div className="analyze-section">
               <button
                 className="analyze-button"
-                disabled={videos.some((v) => v === null)}
+                disabled={videos.some((v) => v === null) || isLoading}
                 onClick={handleAnalyze}
               >
-                Analyze Videos
+                {isLoading ? "Analyzing..." : "Analyze Videos"}
               </button>
             </div>
           </div>

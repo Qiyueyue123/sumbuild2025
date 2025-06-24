@@ -158,15 +158,18 @@ def upload_and_analyze():
     exercise_type = request.form.get("exercise_type", "squat").lower()
     num_sets = request.form.get("num_sets", '1')
     workout_date = request.form.get("workout_date", datetime.today)
+    analysis_type = request.form.get("analysisType","FULL")
     total = 0
     total_good = 0
 
     logger.info(f"Exercise type received: {exercise_type}")
     logger.info(f"Number of sets received: {num_sets}")
     logger.info(f"Workout Date received: {workout_date }")
+    logger.info(f"Analysis type received: {analysis_type}")
 
     processed_results = []
-
+    total = 0
+    total_score = 0
     for file in videos:
         if file.filename == '':
             continue
@@ -188,44 +191,33 @@ def upload_and_analyze():
             raw_processed_filename = f"raw_processed_{unique_filename}"
             raw_processed_path = os.path.join(tempfile.gettempdir(), raw_processed_filename)
 
-            result = analyzer.process_video(local_input_path, raw_processed_path, exercise_type)
+            result = analyzer.process_video(local_input_path, raw_processed_path, exercise_type, analysis_type)
             logger.info(f"Analysis complete. Output saved to {raw_processed_path}")
+            processed_url = None
+            if analysis_type != "QUICK":
+                encoded_filename = f"processed_{uuid.uuid4()}.mp4"
+                encoded_path = os.path.join(tempfile.gettempdir(), encoded_filename)
 
-            encoded_filename = f"processed_{uuid.uuid4()}.mp4"
-            encoded_path = os.path.join(tempfile.gettempdir(), encoded_filename)
+                subprocess.run([
+                    'ffmpeg', '-i', raw_processed_path,
+                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '28',
+                    '-c:a', 'aac', '-b:a', '128k',
+                    '-movflags', '+faststart',
+                    '-y', encoded_path
+                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-            subprocess.run([
-                'ffmpeg', '-i', raw_processed_path,
-                '-c:v', 'libx264', '-preset', 'medium', '-crf', '28',
-                '-c:a', 'aac', '-b:a', '128k',
-                '-movflags', '+faststart',
-                '-y', encoded_path
-            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                logger.info(f"FFmpeg transcoding complete: {encoded_path}")
 
-            logger.info(f"FFmpeg transcoding complete: {encoded_path}")
-
-            with open(encoded_path, 'rb') as processed_file:
-                s3_client.upload_fileobj(
-                    processed_file,
-                    AWS_BUCKET_NAME,
-                    encoded_filename,
-                    ExtraArgs={'ContentType': 'video/mp4'}
-                )
-
-            processed_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{encoded_filename}"
-            logger.info(f"Uploaded processed video to {processed_url}")
-
-            processed_results.append({
-                'processed_url': processed_url,
-                'analysis': result.get('summary', {}),
-                'gemini_feedback': result.get('gemini_feedback', 'No AI feedback available')
-            })
-
-            good_reps= int(result.get('summary', {}).get('good_reps',0))
-            set_reps= int(result.get('summary', {}).get('total_reps',0))
-            total_good += good_reps
-            total += set_reps
-
+                with open(encoded_path, 'rb') as processed_file:
+                    s3_client.upload_fileobj(
+                        processed_file,
+                        AWS_BUCKET_NAME,
+                        encoded_filename,
+                        ExtraArgs={'ContentType': 'video/mp4'}
+                    )
+                
+                processed_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{encoded_filename}"
+                logger.info(f"Uploaded processed video to {processed_url}")
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg error: {e.stderr.decode()}")
             return jsonify({'error': 'Video encoding failed.', 'details': e.stderr.decode()}), 500
@@ -235,23 +227,43 @@ def upload_and_analyze():
             return jsonify({'error': f'Processing failed: {str(e)}'}), 500
 
         finally:
-            for path in [local_input_path, raw_processed_path, encoded_path]:
-                if path and os.path.exists(path):
-                    try:
-                        os.unlink(path)
-                        logger.info(f"Deleted temp file {path}")
-                    except Exception as cleanup_err:
-                        logger.warning(f"Failed to delete temp file {path}: {cleanup_err}")
+            if analysis_type == "FULL":
+                for path in [local_input_path, raw_processed_path, encoded_path]:
+                    if path and os.path.exists(path):
+                        try:
+                            os.unlink(path)
+                            logger.info(f"Deleted temp file {path}")
+                        except Exception as cleanup_err:
+                            logger.warning(f"Failed to delete temp file {path}: {cleanup_err}")
+            
+        print(processed_url)
+        processed_results.append({
+            'processed_url': processed_url,
+            'analysis': result.get('summary', {}),
+            'gemini_feedback': result.get('gemini_feedback', 'No AI feedback available')
+        })
+            
+        good_reps= (result.get('summary', {}).get('score',0))
+        set_reps= 1 
+        float_value = 0.0
+        try:
+            float_value = float(good_reps)
+        except ValueError:
+            float_value = 0.0  # or handle it differently
+        total_score += float_value
+        total += set_reps
+
+        
 
     #save to db
-    score = (total_good/total)*100
+    score = (total_score/total)*100
     workout = {
         'num_sets' : num_sets,
         'results' : processed_results,
         'score' : score       
                 }
     db.users.update_one({'user_id': request.user_id}, {'$push':{f"workouts.{workout_date}":workout}})
-    return jsonify({'success': True, 'results': processed_results})
+    return jsonify({'success': True, 'results': processed_results, 'score': round(score, 2)})
 
 
 @app.route('/', defaults={'path': ''})

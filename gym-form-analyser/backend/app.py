@@ -244,7 +244,7 @@ def upload_and_analyze():
         'score' : score       
                 }
     db.users.update_one({'user_id': request.user_id}, {'$push':{f"workouts.{workout_date}":workout}})
-    return jsonify({'success': True, 'results': processed_results})
+    return jsonify({'success': True, 'results': processed_results, 'score': round(score, 2)})
 
 
 @app.route('/', defaults={'path': ''})

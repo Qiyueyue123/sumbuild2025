@@ -280,13 +280,13 @@ class GymFormAnalyzer:
             logger.warning(f"Failed to analyze bench/pull landmarks: {e}")
             return None
 
-    def process_video(self, input_source, output_path=None, exercise_type="squat"):
+    def process_video(self, input_source, output_path=None, exercise_type="squat", analysis_type = "FULL"):
         cap = cv2.VideoCapture(input_source)
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        if output_path:
+        if output_path or analysis_type == "QUICK":
             fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Use mp4v or XVID for better compatibility
             out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         else:

@@ -5,6 +5,7 @@ import "../assets/styles/newWorkout.css";
 
 const NewWorkout = () => {
   const [exerciseType, setExerciseType] = useState("pushups");
+  const [analysisType, setAnalysisType] = useState("FULL")
   const [numSets, setNumSets] = useState(1);
   const [videos, setVideos] = useState(Array(1).fill(null));
   const [workoutDate, setWorkoutDate] = useState(() => {
@@ -56,11 +57,16 @@ const NewWorkout = () => {
   };
   const handleAnalyze = async () => {
     setIsLoading(true);
+    setAnalysisResults([]);
+    setTotalScore(null);
     try {
+      
       const formData = new FormData();
       formData.append("workout_date", workoutDate);
       formData.append("exercise_type", exerciseType);
       formData.append("num_sets", numSets);
+      formData.append("analysisType",analysisType)
+      
 
       videos.forEach((video) => {
         if (video) {
@@ -125,17 +131,42 @@ const NewWorkout = () => {
                 onChange={(e) => setWorkoutDate(e.target.value)}
               />
             </div>
+            
 
             <div className="form-section">
-              <label>Number of Sets:</label>
-              <input
-                type="number"
-                min="1"
-                value={numSets}
-                onChange={handleSetChange}
-              />
+              
+                <label>Analysis Mode:</label>
+                <div style={{ display: 'flex', borderRadius: '6px', overflow: 'hidden', width: 'fit-content', border: '1px solid #aaa' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAnalysisType('QUICK')}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: analysisType === 'QUICK' ? '#4CAF50' : '#8B0000',
+                      color: 'white',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Quick
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAnalysisType('FULL')}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: analysisType === 'FULL' ? '#4CAF50' : '#8B0000',
+                      color: 'white',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Full
+                  </button>
+                </div>
             </div>
-
             {totalScore !== null && (
               <div className="total-score-banner">
                  <strong>Total Score for current workout:</strong> {totalScore}%
@@ -162,13 +193,15 @@ const NewWorkout = () => {
 
                       {analysisResults[index] && (
                         <div className="feedback-section">
-                          <div className="analyzed-video-container">
-                          {console.log("Video URL:", analysisResults[index])}
+                          {analysisResults[index]?.processedUrl && (
+                            <div className="analyzed-video-container">
+                          
                             <video controls>
                               <source src={analysisResults[index]?.processedUrl} type="video/mp4" />
                               Your browser does not support the video tag.
                             </video>
                           </div>
+                          )}
                           <p><strong> Good Reps / Total Reps:</strong> {analysisResults[index].analysis?.good_reps} / {analysisResults[index].analysis?.total_reps}</p>
                           <p><strong> Avg Peak Angle:</strong> {analysisResults[index].analysis?.average_peak_angle}</p>
                           <p><strong> Avg Descent Angle:</strong> {analysisResults[index].analysis?.average_descent_angle}</p>

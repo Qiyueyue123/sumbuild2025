@@ -264,6 +264,10 @@ const WorkoutDetails = () => {
                     const updatedSets = [...newSets];
                     updatedSets.splice(index, 1);
                     setNewSets(updatedSets);
+                    setWorkout({
+                      ...workout,
+                      num_sets: workout.num_sets - 1,
+                    });
                   }}
                 >
                   ×

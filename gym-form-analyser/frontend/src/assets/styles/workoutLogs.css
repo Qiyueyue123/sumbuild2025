@@ -1,7 +1,27 @@
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden; /* prevent the body from scrolling under fixed elements */
+}
+
+.main-area {
+  display: flex;
+  flex: 1;
+  margin-left: 220px; /* sidebar width */
+  overflow: hidden;
+}
+
+.content-area {
+  flex: 1;
+  overflow-y: auto;
+  background-color: #f9f9f9;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: calc(100vh - 80px); /* ensures content-area scrolls */
+}
+
 .logs-container {
-  padding: 2rem;
-  margin-left: 240px; /* adjust if sidebar is different */
-  margin-top: 80px; /* adjust this to clear the title banner */
   max-width: 1000px;
 }
 

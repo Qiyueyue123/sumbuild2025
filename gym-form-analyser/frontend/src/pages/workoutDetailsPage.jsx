@@ -1,18 +1,20 @@
 import { useLocation } from "react-router-dom";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import TitleBanner from "../components/titleBanner";
 import SideBarNav from "../components/sideBarNav";
 import "../assets/styles/workoutDetails.css";
 
 const WorkoutDetails = () => {
   const { state } = useLocation();
+  const navigate = useNavigate();
   const originalWorkout = state?.workout;
   const [editMode, setEditMode] = useState(false);
   const [workout, setWorkout] = useState(originalWorkout);
   const [newSets, setNewSets] = useState([]);
   const [deletedSetIds, setDeletedSetIds] = useState([]);
   const [analysisType, setAnalysisType] = useState(
-    originalWorkout.results[0].processed_url ? "QUICK" : "FULL"
+    originalWorkout.results[0].processed_url ? "FULL" : "QUICK"
   );
   const [exerciseType, setExerciseType] = useState(
     workout.results[0]?.analysis?.exercise || ""
@@ -74,6 +76,7 @@ const WorkoutDetails = () => {
 
   const handleSaveChanges = async () => {
     const formData = new FormData();
+    formData.append("original_date", originalWorkout.date);
     formData.append("workout_date", workout.date);
     formData.append("exercise_type", exerciseType);
     formData.append("num_sets", workout.num_sets);
@@ -88,13 +91,28 @@ const WorkoutDetails = () => {
 
     const token = localStorage.getItem("token");
     console.log(formData);
-    const response = await fetch("/update_workout", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
+
+    try {
+      const response = await fetch("/update_workout", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert("Error: " + data.error);
+        return;
+      }
+      alert("Workout updated successfully!");
+      navigate("/workout-logs");
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong updating the workout.");
+    }
   };
 
   return (
@@ -127,7 +145,8 @@ const WorkoutDetails = () => {
               workout.date
             )}{" "}
             | <strong>Type:</strong>{" "}
-            {editMode ? (
+            {editMode &&
+            deletedSetIds.length === originalWorkout.results.length ? (
               <select
                 value={exerciseType}
                 onChange={(e) => {

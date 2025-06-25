@@ -334,7 +334,7 @@ const WorkoutDetails = () => {
               <button
                 className="save-btn"
                 onClick={handleSaveChanges}
-                disabled={!hasChanges()}
+                disabled={!hasChanges() || Number(workout.num_sets) === 0}
               >
                 Save Changes
               </button>

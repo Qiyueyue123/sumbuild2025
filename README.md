@@ -39,7 +39,6 @@ version 3.11 or lesser
 
 ### 🛠️ Create `.env` file in `backend/`
 
-Create a file named `.env` inside the `backend/` directory with the following content:
 
 ```env
 # AWS S3
@@ -68,7 +67,6 @@ GEMINI_API_KEY3=your_key_3
 
 ### 🔧 Add `config.py` to Backend
 
-Create a new file called `config.py` in your `backend/` directory and paste the following:
 
 ```python
 import os

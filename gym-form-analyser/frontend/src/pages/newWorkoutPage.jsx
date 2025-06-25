@@ -56,7 +56,7 @@ const NewWorkout = () => {
     updatedVideos[index] = null;
     setVideos(updatedVideos);
   };
-  
+
   const handleAnalyze = async () => {
     setIsLoading(true);
     setAnalysisResults([]);
@@ -114,76 +114,112 @@ const NewWorkout = () => {
           <div className="upload-page">
             <h2>Upload New Workout</h2>
 
-            <div className="form-section">
-              <label>Workout Type:</label>
-              <select value={exerciseType} onChange={handleExerciseChange}>
-                <option value="pushups">Push-ups</option>
-                <option value="squats">Squats</option>
-                <option value="pullups">Pull-ups</option>
-              </select>
-            </div>
+            <div className="form-and-images-row">
+              <div className="left-form-column">
+                <div className="form-section">
+                  <label>Workout Type:</label>
+                  <select value={exerciseType} onChange={handleExerciseChange}>
+                    <option value="pushups">Push-ups</option>
+                    <option value="squats">Squats</option>
+                    <option value="pullups">Pull-ups</option>
+                  </select>
+                </div>
 
-            <div className="form-section">
-              <label>Workout Date:</label>
-              <input
-                type="date"
-                value={workoutDate}
-                onChange={(e) => setWorkoutDate(e.target.value)}
-              />
-            </div>
-            <div className="form-section">
-              <label>Number of Sets:</label>
-              <input
-                type="number"
-                min="1"
-                value={numSets}
-                onChange={handleSetChange}
-              />
-            </div>
+                <div className="form-section">
+                  <label>Workout Date:</label>
+                  <input
+                    type="date"
+                    value={workoutDate}
+                    onChange={(e) => setWorkoutDate(e.target.value)}
+                  />
+                </div>
+                <div className="form-section">
+                  <label>Number of Sets:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={numSets}
+                    onChange={handleSetChange}
+                  />
+                </div>
 
-            <div className="form-section">
-              <label>Analysis Mode:</label>
-              <div
-                style={{
-                  display: "flex",
-                  borderRadius: "6px",
-                  overflow: "hidden",
-                  width: "fit-content",
-                  border: "1px solid #aaa",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setAnalysisType("QUICK")}
-                  style={{
-                    padding: "10px 20px",
-                    backgroundColor:
-                      analysisType === "QUICK" ? "#4CAF50" : "#8B0000",
-                    color: "white",
-                    border: "none",
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                  }}
-                >
-                  Quick
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAnalysisType("FULL")}
-                  style={{
-                    padding: "10px 20px",
-                    backgroundColor:
-                      analysisType === "FULL" ? "#4CAF50" : "#8B0000",
-                    color: "white",
-                    border: "none",
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                  }}
-                >
-                  Full
-                </button>
+                <div className="form-section">
+                  <label>Analysis Mode:</label>
+                  <div
+                    style={{
+                      display: "flex",
+                      borderRadius: "6px",
+                      overflow: "hidden",
+                      width: "fit-content",
+                      border: "1px solid #aaa",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setAnalysisType("QUICK")}
+                      style={{
+                        padding: "10px 20px",
+                        backgroundColor:
+                          analysisType === "QUICK" ? "#4CAF50" : "#8B0000",
+                        color: "white",
+                        border: "none",
+                        fontWeight: "bold",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Quick
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAnalysisType("FULL")}
+                      style={{
+                        padding: "10px 20px",
+                        backgroundColor:
+                          analysisType === "FULL" ? "#4CAF50" : "#8B0000",
+                        color: "white",
+                        border: "none",
+                        fontWeight: "bold",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Full
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="right-image-column">
+                <div className="instructional-images">
+                  <div className="instructional-images">
+                    <h3>Recommended Camera Angles</h3>
+                    <p>
+                      Please ensure your videos are captured from these
+                      perspectives for best results:
+                    </p>
+                    <div className="image-grid">
+                      <div className="image-card">
+                        <img src="/images/squat-angle.jpg" alt="Squat Angle" />
+                        <span>Squats</span>
+                      </div>
+                      <div className="image-card">
+                        <img
+                          src="/images/pushup-angle.jpg"
+                          alt="Push-up Angle"
+                        />
+                        <span>Push-ups</span>
+                      </div>
+                      <div className="image-card">
+                        <img
+                          src="/images/pullup-angle.jpg"
+                          alt="Pull-up Angle"
+                        />
+                        <span>Pull-ups</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
             {totalScore !== null && (
               <div className="total-score-banner">
                 <strong>Total Score for current workout:</strong> {totalScore}%
@@ -251,8 +287,9 @@ const NewWorkout = () => {
                             <strong> Score for set:</strong>{" "}
                             {analysisResults[index].analysis?.score * 100} %
                           </p>
-                          {analysisType === "FULL" && typeof analysisResults[index].geminiFeedback ===
-                          "object" ? (
+                          {analysisType === "FULL" &&
+                          typeof analysisResults[index].geminiFeedback ===
+                            "object" ? (
                             <>
                               <p>
                                 <strong> Strengths:</strong>{" "}
@@ -282,9 +319,12 @@ const NewWorkout = () => {
                                 }
                               </p>
                             </>
-                          ) : ( 
+                          ) : (
                             <p>
-                              <strong>No Gemini feedback as quick analysis was selected.</strong>{" "}
+                              <strong>
+                                No Gemini feedback as quick analysis was
+                                selected.
+                              </strong>{" "}
                             </p>
                           )}
                         </div>

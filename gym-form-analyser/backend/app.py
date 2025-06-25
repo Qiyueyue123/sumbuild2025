@@ -285,7 +285,6 @@ def upload_and_analyze():
             float_value = 0.0  # or handle it differently
         total_score += float_value
         total += set_reps
-
     #save to db
     score = (total_score/total)*100
     workout_id = str(uuid.uuid4())  

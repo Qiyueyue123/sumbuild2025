@@ -104,7 +104,7 @@ const WorkoutLogs = () => {
   };
 
   const handleViewDetails = (workout) => {
-    navigate("/workout-detail", { state: { workout } });
+    navigate("/workout-details", { state: { workout } });
   };
 
   return (

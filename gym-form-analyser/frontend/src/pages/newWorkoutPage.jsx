@@ -250,7 +250,6 @@ const NewWorkout = () => {
                             <strong> Score for set:</strong>{" "}
                             {analysisResults[index].analysis?.score * 100} %
                           </p>
-                          <h4> Feedback</h4>
                           {typeof analysisResults[index].geminiFeedback ===
                           "object" ? (
                             <>

@@ -8,7 +8,6 @@ const SidebarNav = () => {
         <NavLink to="/dashboard">Dashboard</NavLink>
         <NavLink to="/new-workout">New Workout</NavLink>
         <NavLink to="/workout-logs">Workout Logs</NavLink>
-        <NavLink to="/calendarPage">Calendar</NavLink>
         <NavLink to="/profilePage">Profile</NavLink>
       </nav>
     </aside>

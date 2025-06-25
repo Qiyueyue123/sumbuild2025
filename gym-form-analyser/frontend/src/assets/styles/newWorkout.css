@@ -10,15 +10,14 @@
   flex-direction: row;
   flex: 1;
   min-height: 100vh;
+  margin-left: 220px; 
 }
 
 .upload-page {
-  margin-left: 220px;
   padding: 40px;
-  padding-top: 120px; 
+  padding-top: 120px;
   background-color: #f9f9f9;
   overflow-y: auto;
-  
 }
 
 .content-area {

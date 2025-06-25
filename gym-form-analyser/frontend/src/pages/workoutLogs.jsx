@@ -60,7 +60,7 @@ const WorkoutLogs = () => {
         },
         body: JSON.stringify({
           workout_id: workoutToDelete.id,
-          workout_date: workoutToDelete.date
+          workout_date: workoutToDelete.date,
         }),
       });
 
@@ -112,64 +112,66 @@ const WorkoutLogs = () => {
       <TitleBanner />
       <div className="main-area">
         <SideBarNav />
-        <div className="logs-container">
-          <h2>Workout Logs</h2>
-          <div className="sort-controls">
-            <button onClick={() => handleSortChange("date")}>
-              Sort by Date
-            </button>
-            <button onClick={() => handleSortChange("exercise")}>
-              Sort by Exercise
-            </button>
-          </div>
-          <table className="workout-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Exercise</th>
-                <th>Sets</th>
-                <th>Score</th>
-                <th>View</th>
-                <th>Delete</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedWorkouts.map((workout, i) => (
-                <tr key={i}>
-                  <td>{workout.date}</td>
-                  <td>{workout.results[0].analysis.exercise}</td>
-                  <td>{workout.num_sets}</td>
-                  <td>
-                    <div
-                      className="score-circle"
-                      style={{
-                        backgroundColor: getColorFromScore(workout.score),
-                      }}
-                    >
-                      {Math.round(workout.score)}
-                    </div>
-                  </td>
-                  <td>
-                    <button
-                      className="view-btn"
-                      onClick={() => handleViewDetails(workout)}
-                    >
-                      View Details
-                    </button>
-                  </td>
-                  <td>
-                    <button
-                      className="delete-btn"
-                      onClick={() => handleDeleteWorkout(workout)}
-                      title="Delete Workout"
-                    >
-                      🗑️
-                    </button>
-                  </td>
+        <div className="content-area workout-details-page">
+          <div className="logs-container">
+            <h2>Workout Logs</h2>
+            <div className="sort-controls">
+              <button onClick={() => handleSortChange("date")}>
+                Sort by Date
+              </button>
+              <button onClick={() => handleSortChange("exercise")}>
+                Sort by Exercise
+              </button>
+            </div>
+            <table className="workout-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Exercise</th>
+                  <th>Sets</th>
+                  <th>Score</th>
+                  <th>View</th>
+                  <th>Delete</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {sortedWorkouts.map((workout, i) => (
+                  <tr key={i}>
+                    <td>{workout.date}</td>
+                    <td>{workout.results[0].analysis.exercise}</td>
+                    <td>{workout.num_sets}</td>
+                    <td>
+                      <div
+                        className="score-circle"
+                        style={{
+                          backgroundColor: getColorFromScore(workout.score),
+                        }}
+                      >
+                        {Math.round(workout.score)}
+                      </div>
+                    </td>
+                    <td>
+                      <button
+                        className="view-btn"
+                        onClick={() => handleViewDetails(workout)}
+                      >
+                        View Details
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        className="delete-btn"
+                        onClick={() => handleDeleteWorkout(workout)}
+                        title="Delete Workout"
+                      >
+                        🗑️
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

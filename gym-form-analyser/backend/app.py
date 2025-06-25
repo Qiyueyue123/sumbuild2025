@@ -13,6 +13,7 @@ import tempfile
 from video_processor import GymFormAnalyzer 
 import logging
 import subprocess
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +47,90 @@ analyzer = GymFormAnalyzer()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def process_videos(videos, exercise_type, analysis_type):
+    logger.info(f"Received {len(videos)} video files")
+
+    if not videos or all(v.filename == '' for v in videos):
+        raise ValueError("No valid video files received")
+
+    logger.info(f"Exercise type: {exercise_type}")
+    logger.info(f"Analysis type: {analysis_type}")
+
+    processed_results = []
+    total_score = 0.0
+    processed_count = 0
+
+    for idx, file in enumerate(videos):
+        if file.filename == '' or not allowed_file(file.filename):
+            logger.warning(f"Skipping invalid file: {file.filename}")
+            continue
+
+        try:
+            file_ext = file.filename.rsplit('.', 1)[1].lower()
+            unique_filename = f"{uuid.uuid4()}.{file_ext}"
+
+            with tempfile.NamedTemporaryFile(suffix=f".{file_ext}", delete=False) as tmp_file:
+                file.save(tmp_file.name)
+                local_input_path = tmp_file.name
+
+            raw_path = os.path.join(tempfile.gettempdir(), f"raw_processed_{unique_filename}")
+            result = analyzer.process_video(local_input_path, raw_path, exercise_type, analysis_type)
+
+            processed_url = None
+            encoded_path = None
+
+            if analysis_type != "QUICK":
+                encoded_filename = f"processed_{uuid.uuid4()}.mp4"
+                encoded_path = os.path.join(tempfile.gettempdir(), encoded_filename)
+
+                subprocess.run([
+                    'ffmpeg', '-i', raw_path,
+                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '28',
+                    '-c:a', 'aac', '-b:a', '128k',
+                    '-movflags', '+faststart',
+                    '-y', encoded_path
+                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+                with open(encoded_path, 'rb') as processed_file:
+                    s3_client.upload_fileobj(
+                        processed_file,
+                        AWS_BUCKET_NAME,
+                        encoded_filename,
+                        ExtraArgs={'ContentType': 'video/mp4'}
+                    )
+
+                processed_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{encoded_filename}"
+
+            processed_results.append({
+                'id': str(uuid.uuid4()),
+                'processed_url': processed_url,
+                'analysis': result.get('summary', {}),
+                'gemini_feedback': result.get('gemini_feedback', 'No AI feedback available')
+            })
+
+            score = float(result.get('summary', {}).get('score', 0))
+            total_score += score
+            processed_count += 1
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg error: {e.stderr.decode()}")
+            raise RuntimeError("Video encoding failed")
+
+        except Exception as e:
+            logger.error(f"Processing failed: {str(e)}")
+            raise RuntimeError(f"Processing error: {str(e)}")
+
+        finally:
+            for path in [local_input_path, raw_path, encoded_path]:
+                if path and os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                        logger.info(f"Deleted temp file: {path}")
+                    except Exception as cleanup_err:
+                        logger.warning(f"Cleanup failed for {path}: {cleanup_err}")
+
+    return processed_results, total_score, processed_count
 
 #ROUTES
 
@@ -176,6 +261,123 @@ def delete_workout():
 
     return jsonify({'message': 'Workout deleted'})
 
+@app.route('/update_workout', methods=['POST'])
+@token_required
+def update_workout():
+    form = request.form
+
+    original_date = form.get("original_date")
+    workout_date = form.get("workout_date", original_date)
+    exercise_type = form.get("exercise_type", "").lower()
+    num_sets = int(form.get("num_sets", 0))
+    analysis_type = form.get("analysisType", "FULL")
+    workout_id = form.get("id")
+    deleted_set_ids = json.loads(form.get("deleted_set_ids", "[]"))
+    videos = request.files.getlist("video")
+
+    if not original_date or not workout_id:
+        return jsonify({"error": "Missing required fields: original_date or workout_id"}), 400
+
+    # 1. Delete selected sets
+    if deleted_set_ids:
+        db.users.update_one(
+            {
+                "user_id": request.user_id,
+                f"workouts.{original_date}.id": workout_id
+            },
+            {
+                "$pull": {
+                    f"workouts.{original_date}.$.results": {
+                        "id": {"$in": deleted_set_ids}
+                    }
+                }
+            }
+        )
+
+    # 2. Get the workout object
+    user_doc = db.users.find_one(
+        { "user_id": request.user_id },
+        { f"workouts.{original_date}": 1 }
+    )
+    workouts_on_date = user_doc.get("workouts", {}).get(original_date, [])
+    target_workout = next((w for w in workouts_on_date if w["id"] == workout_id), None)
+
+    if not target_workout:
+        return jsonify({"error": "Workout not found"}), 404
+
+    # 3. If workout_date has changed, move it first
+    if workout_date != original_date:
+        db.users.update_one(
+            { "user_id": request.user_id },
+            { "$pull": { f"workouts.{original_date}": { "id": workout_id } } }
+        )
+        db.users.update_one(
+            { "user_id": request.user_id },
+            { "$push": { f"workouts.{workout_date}": target_workout } }
+        )
+        # Clean up empty date
+        check_user = db.users.find_one(
+            { "user_id": request.user_id },
+            { f"workouts.{original_date}": 1 }
+        )
+        if not check_user.get("workouts", {}).get(original_date):
+            db.users.update_one(
+                { "user_id": request.user_id },
+                { "$unset": { f"workouts.{original_date}": "" } }
+            )
+
+    # 4. Process new videos if any
+    new_results = []
+    if videos and any(v.filename for v in videos):
+        try:
+            new_results, _, _ = process_videos(videos, exercise_type, analysis_type)
+        except ValueError as ve:
+            return jsonify({"error": str(ve)}), 400
+        except RuntimeError as re:
+            return jsonify({"error": str(re)}), 500
+
+        # Add results to updated workout (now at workout_date)
+        db.users.update_one(
+            {
+                "user_id": request.user_id,
+                f"workouts.{workout_date}.id": workout_id
+            },
+            {
+                "$push": {
+                    f"workouts.{workout_date}.$.results": { "$each": new_results }
+                }
+            }
+        )
+
+    # 5. Recalculate score and metadata
+    updated_doc = db.users.find_one(
+        { "user_id": request.user_id },
+        { f"workouts.{workout_date}": 1 }
+    )
+    updated_workouts = updated_doc.get("workouts", {}).get(workout_date, [])
+    updated = next((w for w in updated_workouts if w["id"] == workout_id), None)
+
+    if updated:
+        sets = updated.get("results", [])
+        total_score = sum(float(s.get("analysis", {}).get("score", 0)) for s in sets)
+        total_sets = len(sets)
+        avg_score = (total_score / total_sets) * 100 if total_sets else 0
+
+        db.users.update_one(
+            {
+                "user_id": request.user_id,
+                f"workouts.{workout_date}.id": workout_id
+            },
+            {
+                "$set": {
+                    f"workouts.{workout_date}.$.num_sets": total_sets,
+                    f"workouts.{workout_date}.$.score": round(avg_score, 2),
+                    f"workouts.{workout_date}.$.exercise_type": exercise_type
+                }
+            }
+        )
+
+    return jsonify({"message": "Workout updated successfully"})
 
 @app.route('/upload_and_analyze', methods=['POST'])
 @token_required
@@ -190,154 +392,41 @@ def upload_and_analyze():
 
     exercise_type = request.form.get("exercise_type", "squat").lower()
     num_sets = request.form.get("num_sets", '1')
-    workout_date = request.form.get("workout_date", datetime.today)
-    analysis_type = request.form.get("analysisType","FULL")
-    total = 0
-    total_good = 0
+    workout_date = request.form.get("workout_date", datetime.today().strftime('%Y-%m-%d'))
+    analysis_type = request.form.get("analysisType", "FULL")
 
     logger.info(f"Exercise type received: {exercise_type}")
     logger.info(f"Number of sets received: {num_sets}")
-    logger.info(f"Workout Date received: {workout_date }")
+    logger.info(f"Workout Date received: {workout_date}")
     logger.info(f"Analysis type received: {analysis_type}")
 
-    processed_results = []
-    total = 0
-    total_score = 0
-    for file in videos:
-        if file.filename == '':
-            continue
+    try:
+        processed_results, total_score, total_sets = process_videos(videos, exercise_type, analysis_type)
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+    except RuntimeError as re:
+        return jsonify({'error': str(re)}), 500
 
-        if not allowed_file(file.filename):
-            logger.warning(f"Invalid file skipped: {file.filename}")
-            continue
+    # Final score calculation
+    score = (total_score / total_sets) * 100 if total_sets else 0
 
-        try:
-            file_extension = file.filename.rsplit('.', 1)[1].lower()
-            unique_filename = f"{uuid.uuid4()}.{file_extension}"
-
-            with tempfile.NamedTemporaryFile(suffix=f".{file_extension}", delete=False) as tmp_file:
-                file.save(tmp_file.name)
-                local_input_path = tmp_file.name
-
-            logger.info(f"Uploaded file saved temporarily to {local_input_path}")
-    
-            raw_processed_filename = f"raw_processed_{unique_filename}"
-            raw_processed_path = os.path.join(tempfile.gettempdir(), raw_processed_filename)
-
-            result = analyzer.process_video(local_input_path, raw_processed_path, exercise_type, analysis_type)
-            logger.info(f"Analysis complete. Output saved to {raw_processed_path}")
-            processed_url = None
-            if analysis_type != "QUICK":
-                encoded_filename = f"processed_{uuid.uuid4()}.mp4"
-                encoded_path = os.path.join(tempfile.gettempdir(), encoded_filename)
-
-                subprocess.run([
-                    'ffmpeg', '-i', raw_processed_path,
-                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '28',
-                    '-c:a', 'aac', '-b:a', '128k',
-                    '-movflags', '+faststart',
-                    '-y', encoded_path
-                ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-                logger.info(f"FFmpeg transcoding complete: {encoded_path}")
-
-                with open(encoded_path, 'rb') as processed_file:
-                    s3_client.upload_fileobj(
-                        processed_file,
-                        AWS_BUCKET_NAME,
-                        encoded_filename,
-                        ExtraArgs={'ContentType': 'video/mp4'}
-                    )
-                
-                processed_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{encoded_filename}"
-                logger.info(f"Uploaded processed video to {processed_url}")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"FFmpeg error: {e.stderr.decode()}")
-            return jsonify({'error': 'Video encoding failed.', 'details': e.stderr.decode()}), 500
-
-        except Exception as e:
-            logger.error(f"Processing failed: {str(e)}")
-            return jsonify({'error': f'Processing failed: {str(e)}'}), 500
-
-        finally:
-            if analysis_type == "FULL":
-                for path in [local_input_path, raw_processed_path, encoded_path]:
-                    if path and os.path.exists(path):
-                        try:
-                            os.unlink(path)
-                            logger.info(f"Deleted temp file {path}")
-                        except Exception as cleanup_err:
-                            logger.warning(f"Failed to delete temp file {path}: {cleanup_err}")
-            
-        print(processed_url)
-        processed_results.append({
-            'processed_url': processed_url,
-            'analysis': result.get('summary', {}),
-            'gemini_feedback': result.get('gemini_feedback', 'No AI feedback available')
-        })
-            
-        good_reps= (result.get('summary', {}).get('score',0))
-        set_reps= 1 
-        float_value = 0.0
-        try:
-            float_value = float(good_reps)
-        except ValueError:
-            float_value = 0.0  # or handle it differently
-        total_score += float_value
-        total += set_reps
-    #save to db
-    score = (total_score/total)*100
-    workout_id = str(uuid.uuid4())  
     workout = {
-        'id' : workout_id,
-        'num_sets' : num_sets,
-        'results' : processed_results,
-        'score' : score       
-                }
-    db.users.update_one({'user_id': request.user_id}, {'$push':{f"workouts.{workout_date}":workout}})
-    return jsonify({'success': True, 'results': processed_results, 'score': round(score, 2)})
-
-@app.route('/get-profile', methods=['GET'])
-@token_required
-def get_profile():
-    user = db.users.find_one({"user_id": request.user_id})
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-    return jsonify({
-        'user_id': user['user_id'],
-        'email': user['email']
-    })
-
-@app.route('/update-profile', methods=['PUT'])
-@token_required
-def update_profile():
-    data = request.json
-    email = data.get('email')
-    user_id = data.get('user_id')
-    password = data.get('password')
-
-    if not email or not user_id:
-        return jsonify({'error': 'Missing fields'}), 400
-
-    update_fields = {
-        'email': email,
-        'user_id': user_id,
+        'id': str(uuid.uuid4()),
+        'num_sets': int(num_sets),
+        'results': processed_results,
+        'score': round(score, 2)
     }
 
-    if password:
-        update_fields['password_hash'] = generate_password_hash(password)
-
-    result = db.users.update_one(
-        {'user_id': request.user_id},
-        {'$set': update_fields}
+    db.users.update_one(
+        { 'user_id': request.user_id },
+        { '$push': { f"workouts.{workout_date}": workout } }
     )
 
-    if result.matched_count == 0:
-        return jsonify({'error': 'User not found'}), 404
-
-    return jsonify({'message': 'Profile updated successfully'})
-
-
+    return jsonify({
+        'success': True,
+        'results': processed_results,
+        'score': round(score, 2)
+    })
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

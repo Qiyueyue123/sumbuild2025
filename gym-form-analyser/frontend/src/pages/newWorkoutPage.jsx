@@ -56,6 +56,7 @@ const NewWorkout = () => {
     updatedVideos[index] = null;
     setVideos(updatedVideos);
   };
+  
   const handleAnalyze = async () => {
     setIsLoading(true);
     setAnalysisResults([]);

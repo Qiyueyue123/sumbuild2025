@@ -27,7 +27,7 @@ const Login = () => {
 
       if (res.ok) {
         localStorage.setItem('token', data.token);
-        navigate("/dashboard");
+        navigate("/workout-logs");
       } else {
         alert(data.error || "login failed.");
       }

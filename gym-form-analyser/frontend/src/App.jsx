@@ -18,9 +18,8 @@ function App() {
         <Route path="/penis" element={<h1>Penis</h1>} />
 
         <Route element={<PrivateRoute />}>
-          <Route path="/dashboard" element={<Homepage />} />
-          <Route path="/new-workout" element={<NewWorkout />} />
           <Route path="/workout-logs" element={<WorkoutLogs />} />
+          <Route path="/new-workout" element={<NewWorkout />} />
           <Route path="/workout-details" element={<WorkoutDetails />} />
           <Route path="/profilePage" element={<ProfilePage />} />
         </Route>

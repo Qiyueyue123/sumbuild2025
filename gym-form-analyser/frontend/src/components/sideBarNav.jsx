@@ -5,9 +5,8 @@ const SidebarNav = () => {
   return (
     <aside className="sidebar">
       <nav className="sidebar-links">
-        <NavLink to="/dashboard">Dashboard</NavLink>
+        <NavLink to="/workout-logs">Dashboard</NavLink>
         <NavLink to="/new-workout">New Workout</NavLink>
-        <NavLink to="/workout-logs">Workout Logs</NavLink>
         <NavLink to="/profilePage">Profile</NavLink>
       </nav>
     </aside>

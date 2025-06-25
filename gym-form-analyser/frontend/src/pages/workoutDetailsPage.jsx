@@ -357,7 +357,11 @@ const WorkoutDetails = () => {
               <button
                 className="save-btn"
                 onClick={handleSaveChanges}
-                disabled={!hasChanges() || Number(workout.num_sets) === 0 || newSets.some((set) => set.video !== null)}
+                disabled={
+                  !hasChanges() ||
+                  Number(workout.num_sets) === 0 ||
+                  (newSets.length > 0 && newSets.every((set) => !set.video))
+                }
               >
                 Save Changes
               </button>

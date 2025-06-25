@@ -25,7 +25,7 @@ An AI-powered full stack web app to help beginner gym-goers improve their form. 
 cd frontend <br/>
 npm install <br/>
 npm run build <br/>
-# → generates `dist/`, served by Flask
+### → generates `dist/`, served by Flask
 
 
 # to run the server

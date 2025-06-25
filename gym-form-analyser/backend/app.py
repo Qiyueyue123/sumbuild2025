@@ -297,6 +297,47 @@ def upload_and_analyze():
     db.users.update_one({'user_id': request.user_id}, {'$push':{f"workouts.{workout_date}":workout}})
     return jsonify({'success': True, 'results': processed_results, 'score': round(score, 2)})
 
+@app.route('/get-profile', methods=['GET'])
+@token_required
+def get_profile():
+    user = db.users.find_one({"user_id": request.user_id})
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    return jsonify({
+        'user_id': user['user_id'],
+        'email': user['email']
+    })
+
+@app.route('/update-profile', methods=['PUT'])
+@token_required
+def update_profile():
+    data = request.json
+    email = data.get('email')
+    user_id = data.get('user_id')
+    password = data.get('password')
+
+    if not email or not user_id:
+        return jsonify({'error': 'Missing fields'}), 400
+
+    update_fields = {
+        'email': email,
+        'user_id': user_id,
+    }
+
+    if password:
+        update_fields['password_hash'] = generate_password_hash(password)
+
+    result = db.users.update_one(
+        {'user_id': request.user_id},
+        {'$set': update_fields}
+    )
+
+    if result.matched_count == 0:
+        return jsonify({'error': 'User not found'}), 404
+
+    return jsonify({'message': 'Profile updated successfully'})
+
+
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

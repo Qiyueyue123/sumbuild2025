@@ -1,7 +1,7 @@
 .logs-container {
-  padding: 2rem;
-  margin-left: 240px; /* adjust if sidebar is different */
-  margin-top: 80px; /* adjust this to clear the title banner */
+  padding: 24px;
+  margin-left: 24px; /* adjust if sidebar is different */
+  margin-top: 100px; /* adjust this to clear the title banner */
   max-width: 1000px;
 }
 

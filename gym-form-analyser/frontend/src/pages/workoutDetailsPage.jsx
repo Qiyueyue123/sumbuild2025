@@ -357,7 +357,7 @@ const WorkoutDetails = () => {
               <button
                 className="save-btn"
                 onClick={handleSaveChanges}
-                disabled={!hasChanges() || Number(workout.num_sets) === 0}
+                disabled={!hasChanges() || Number(workout.num_sets) === 0 || newSets.some((set) => set.video !== null)}
               >
                 Save Changes
               </button>

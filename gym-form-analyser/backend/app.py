@@ -144,6 +144,39 @@ def all_workouts():
     workouts = user.get("workouts", [])
     return jsonify(workouts)
 
+@app.route('/delete_workout', methods=['DELETE'])
+@token_required
+def delete_workout():
+    data = request.get_json()
+    workout_id = data.get("workout_id")
+    workout_date = data.get("workout_date")
+
+    if not workout_id or not workout_date:
+        return jsonify({'error': 'Missing workout_id or workout_date'}), 400
+
+    result = db.users.update_one(
+        {"user_id": request.user_id},
+        {"$pull": {f"workouts.{data.get('workout_date')}": {"id": workout_id}}}
+    )
+
+    if result.modified_count == 0:
+        return jsonify({'error': 'Workout not found'}), 404
+
+    user = db.users.find_one(
+        {"user_id": request.user_id},
+        {f"workouts.{workout_date}": 1}
+    )
+    workouts_on_date = user.get("workouts", {}).get(workout_date, [])
+
+    if not workouts_on_date:
+        db.users.update_one(
+            {"user_id": request.user_id},
+            {"$unset": {f"workouts.{workout_date}": ""}}
+        )
+
+    return jsonify({'message': 'Workout deleted'})
+
+
 @app.route('/upload_and_analyze', methods=['POST'])
 @token_required
 def upload_and_analyze():
@@ -253,11 +286,11 @@ def upload_and_analyze():
         total_score += float_value
         total += set_reps
 
-        
-
     #save to db
     score = (total_score/total)*100
+    workout_id = str(uuid.uuid4())  
     workout = {
+        'id' : workout_id,
         'num_sets' : num_sets,
         'results' : processed_results,
         'score' : score       

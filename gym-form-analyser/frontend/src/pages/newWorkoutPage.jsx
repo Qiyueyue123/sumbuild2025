@@ -216,7 +216,7 @@ const NewWorkout = () => {
                           <p><strong> Avg Descent Angle:</strong> {analysisResults[index].analysis?.average_descent_angle}</p>
                           <p><strong> Feedback:</strong> {analysisResults[index].analysis?.overall_feedback}</p>
                           <p><strong> Score for set:</strong> {analysisResults[index].analysis?.score*100} %</p>
-                          <h4> Gemini AI Feedback</h4>
+                          <h4> Feedback</h4>
                           {typeof analysisResults[index].geminiFeedback === "object" ? (
                             <>
                               <p><strong> Strengths:</strong> {analysisResults[index].geminiFeedback?.strengths?.join(", ")}</p>

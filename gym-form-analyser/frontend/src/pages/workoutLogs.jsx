@@ -46,6 +46,37 @@ const WorkoutLogs = () => {
     fetchData();
   }, []);
 
+  const handleDeleteWorkout = async (workoutToDelete) => {
+    if (!window.confirm("Are you sure you want to delete this workout?"))
+      return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch("/delete_workout", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          workout_id: workoutToDelete.id,
+          workout_date: workoutToDelete.date
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete workout");
+      }
+
+      // Remove from local state
+      setAllWorkouts((prev) =>
+        prev.filter((w) => !(w.id === workoutToDelete.id))
+      );
+    } catch (err) {
+      console.error(err.message);
+      alert("Failed to delete workout");
+    }
+  };
   const sortedWorkouts = [...allWorkouts].sort((a, b) => {
     if (sortKey === "date") {
       return sortOrder === "asc"
@@ -99,6 +130,7 @@ const WorkoutLogs = () => {
                 <th>Sets</th>
                 <th>Score</th>
                 <th>View</th>
+                <th>Delete</th>
               </tr>
             </thead>
             <tbody>
@@ -123,6 +155,15 @@ const WorkoutLogs = () => {
                       onClick={() => handleViewDetails(workout)}
                     >
                       View Details
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      className="delete-btn"
+                      onClick={() => handleDeleteWorkout(workout)}
+                      title="Delete Workout"
+                    >
+                      🗑️
                     </button>
                   </td>
                 </tr>

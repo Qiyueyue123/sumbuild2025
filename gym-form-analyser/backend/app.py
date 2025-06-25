@@ -13,13 +13,16 @@ import tempfile
 from video_processor import GymFormAnalyzer 
 import logging
 import subprocess
+import certifi
+from pymongo import MongoClient
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 #configure mongodb stuff
-client = MongoClient(Config.MONGO_URI)
+client = MongoClient(Config.MONGO_URI, tlsCAFile=certifi.where())
 db = client['summbuild']
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))

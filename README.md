@@ -22,9 +22,9 @@ An AI-powered full stack web app to help beginner gym-goers improve their form. 
    cd gym-form-analyser
 
 # render frontend first
-cd frontend
-npm install
-npm run build
+cd frontend <br/>
+npm install <br/>
+npm run build <br/>
 # → generates `dist/`, served by Flask
 
 
@@ -37,27 +37,33 @@ python3 app.py <br/>
 version 3.11 or lesser
 
 
-# create .env file in backend
+### 🛠️ Create `.env` file in `backend/`
 
+Create a file named `.env` inside the `backend/` directory with the following content:
+
+```env
+# AWS S3
 AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY
 AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET
 AWS_REGION=ap-southeast-1
 AWS_BUCKET_NAME=your_bucket_name
 
-
+# MongoDB Atlas
 MONGO_URI=your_mongo_connection_string
 
+# Flask
 FLASK_ENV=development
 FLASK_APP=app.py
 SECRET_KEY=your_flask_secret
 
-
+# JWT
 JWT_SECRET_KEY=your_jwt_secret
 
-
+# Gemini API (rotating keys)
 GEMINI_API_KEY1=your_key_1
 GEMINI_API_KEY2=your_key_2
 GEMINI_API_KEY3=your_key_3
+
 
 
 ### 🔧 Add `config.py` to Backend

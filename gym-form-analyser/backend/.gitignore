@@ -1,0 +1,19 @@
+#ignore sensitive files
+config.py
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.env
+
+# IDE files
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+
+#external programs
+ffmpeg.exe

@@ -250,7 +250,7 @@ const NewWorkout = () => {
                             <strong> Score for set:</strong>{" "}
                             {analysisResults[index].analysis?.score * 100} %
                           </p>
-                          {typeof analysisResults[index].geminiFeedback ===
+                          {analysisType === "FULL" && typeof analysisResults[index].geminiFeedback ===
                           "object" ? (
                             <>
                               <p>
@@ -281,10 +281,9 @@ const NewWorkout = () => {
                                 }
                               </p>
                             </>
-                          ) : (
+                          ) : ( 
                             <p>
-                              <strong>Gemini Feedback:</strong>{" "}
-                              {String(analysisResults[index].geminiFeedback)}
+                              <strong>No Gemini feedback as quick analysis was selected.</strong>{" "}
                             </p>
                           )}
                         </div>

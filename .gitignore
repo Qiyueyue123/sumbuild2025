@@ -51,3 +51,9 @@ lerna-debug.log*
 # =====================
 
 ffmpeg.exe
+
+# === Ignore Python virtual environments (no matter where they are) ===
+venv/
+env/
+**/venv/
+**/env/

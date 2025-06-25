@@ -6,6 +6,8 @@ import NewWorkout from "./pages/newWorkoutPage";
 import WorkoutLogs from "./pages/workoutLogs";
 import WorkoutDetails from "./pages/workoutDetailsPage";
 import PrivateRoute from "./components/privateRoute";
+import ProfilePage from "./pages/profilePage";
+
 
 function App() {
   return (
@@ -20,6 +22,7 @@ function App() {
           <Route path="/new-workout" element={<NewWorkout />} />
           <Route path="/workout-logs" element={<WorkoutLogs />} />
           <Route path="/workout-details" element={<WorkoutDetails />} />
+          <Route path="/profilePage" element={<ProfilePage />} />
         </Route>
       </Routes>
     </Router>

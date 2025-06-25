@@ -14,15 +14,13 @@
 }
 
 .upload-page {
-  padding: 40px;
-  padding-top: 120px;
+  padding: 24px;
   background-color: #f9f9f9;
   overflow-y: auto;
 }
 
 .content-area {
   flex: 1;
-  padding-top: 80px; /* for top banner */
   padding-left: 40px;
   padding-right: 40px;
   background-color: #f9f9f9;

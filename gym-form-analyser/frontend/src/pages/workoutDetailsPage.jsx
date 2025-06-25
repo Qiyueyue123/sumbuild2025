@@ -25,7 +25,34 @@ const WorkoutDetails = () => {
 
   const handleCancel = () => {
     setWorkout(originalWorkout);
+    setNewSets([]);
     setEditMode(false);
+  };
+
+  // New handler to delete an existing set with confirmation
+  const handleDeleteExistingSet = (index) => {
+    if (
+      window.confirm(
+        `Are you sure you want to delete Set ${
+          index + 1
+        }? This action cannot be undone.`
+      )
+    ) {
+      const updatedResults = [...workout.results];
+      updatedResults.splice(index, 1);
+      setWorkout({
+        ...workout,
+        results: updatedResults,
+        num_sets: workout.num_sets - 1,
+      });
+    }
+  };
+
+  // Remove video from new set
+  const handleRemoveNewSetVideo = (index) => {
+    const updated = [...newSets];
+    updated[index] = { video: null };
+    setNewSets(updated);
   };
 
   return (
@@ -61,7 +88,11 @@ const WorkoutDetails = () => {
           </div>
 
           {workout.results.map((set, index) => (
-            <div key={index} className="set-container">
+            <div
+              key={index}
+              className="set-container"
+              style={{ position: "relative" }}
+            >
               <h4>Set {index + 1}</h4>
               <div className="video-feedback-row">
                 {set.processed_url ? (
@@ -116,6 +147,23 @@ const WorkoutDetails = () => {
                   )}
                 </div>
               </div>
+
+              {editMode && (
+                <button
+                  className="remove-set-btn bottom-right"
+                  onClick={() => {
+                    const updatedResults = [...workout.results];
+                    updatedResults.splice(index, 1);
+                    setWorkout({
+                      ...workout,
+                      results: updatedResults,
+                      num_sets: workout.num_sets - 1,
+                    });
+                  }}
+                >
+                  Delete Set
+                </button>
+              )}
             </div>
           ))}
 
@@ -135,12 +183,23 @@ const WorkoutDetails = () => {
                 <h4>New Set {workout.results.length + index + 1}</h4>
                 <div className="video-feedback-row">
                   {set.video ? (
-                    <video controls>
-                      <source
-                        src={URL.createObjectURL(set.video)}
-                        type="video/mp4"
-                      />
-                    </video>
+                    <>
+                      <div style={{ display: "flex", flexDirection: "column" }}>
+                        <video controls>
+                          <source
+                            src={URL.createObjectURL(set.video)}
+                            type="video/mp4"
+                          />
+                        </video>
+                        <button
+                          className="remove-video-btn"
+                          onClick={() => handleRemoveNewSetVideo(index)}
+                          style={{ marginTop: "10px", alignSelf: "start" }}
+                        >
+                          Remove Video
+                        </button>
+                      </div>
+                    </>
                   ) : (
                     <>
                       <label

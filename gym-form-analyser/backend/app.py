@@ -268,9 +268,10 @@ def upload_and_analyze():
                             logger.info(f"Deleted temp file {path}")
                         except Exception as cleanup_err:
                             logger.warning(f"Failed to delete temp file {path}: {cleanup_err}")
-            
+        set_id = str(uuid.uuid4())
         print(processed_url)
         processed_results.append({
+            'id': set_id,
             'processed_url': processed_url,
             'analysis': result.get('summary', {}),
             'gemini_feedback': result.get('gemini_feedback', 'No AI feedback available')

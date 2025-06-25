@@ -29,39 +29,38 @@ npm run build
 
 
 # to run the server
-cd ../backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python3 app.py 
-# version 3.11 or lesser
+cd ../backend<br/>
+python3 -m venv venv<br/>
+source venv/bin/activate<br/>
+pip install -r requirements.txt<br/>
+python3 app.py <br/>
+version 3.11 or lesser
 
 
 # create .env file in backend
-# -- AWS S3 --
+
 AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY
 AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET
 AWS_REGION=ap-southeast-1
 AWS_BUCKET_NAME=your_bucket_name
 
-# -- MongoDB Atlas --
+
 MONGO_URI=your_mongo_connection_string
 
-# -- Flask --
 FLASK_ENV=development
 FLASK_APP=app.py
 SECRET_KEY=your_flask_secret
 
-# -- JWT --
+
 JWT_SECRET_KEY=your_jwt_secret
 
-# -- Gemini API (rotate keys) --
+
 GEMINI_API_KEY1=your_key_1
 GEMINI_API_KEY2=your_key_2
 GEMINI_API_KEY3=your_key_3
 
 
-# add config.py to backend directory too
+# add config.py to backend
 
 import os
 from dotenv import load_dotenv

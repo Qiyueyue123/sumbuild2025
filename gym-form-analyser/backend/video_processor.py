@@ -73,10 +73,15 @@ class GymFormAnalyzer:
             min_tracking_confidence=0.7
         )
         # Configure Gemini API once during initialization
+        GEMINI_API_KEY = Config.getGeminiApiKey()
+        print(GEMINI_API_KEY)
         try:
-            if not Config.GEMINI_API_KEY:
+            
+            GEMINI_API_KEY = Config.getGeminiApiKey()
+            print(GEMINI_API_KEY)
+            if not GEMINI_API_KEY:
                 raise ValueError("Gemini API Key is not set in Config.")
-            genai.configure(api_key=Config.GEMINI_API_KEY)
+            genai.configure(api_key=GEMINI_API_KEY)
             self.gemini_model = genai.GenerativeModel("models/gemini-2.5-flash")
             logger.info("Gemini API configured successfully using models/gemini-2.5-flash.")
         except Exception as e:
@@ -427,7 +432,7 @@ class GymFormAnalyzer:
             out.release()
         score = self.evaluate_form(keypointSeriesForImportantFrames, list_of_states, exercise_type)
         summary = self.generate_summary(list_of_frames, list_of_states, exercise_type,score)
-        gemini_feedback = self.send_to_gemini(keypoint_series, exercise_type)
+        gemini_feedback = self.send_to_gemini(keypoint_series, exercise_type,analysis_type)
 
         return {
             'processed_video': output_path if output_path else None,
@@ -435,8 +440,8 @@ class GymFormAnalyzer:
             'gemini_feedback': gemini_feedback
         }
 
-    def send_to_gemini(self, landmarks_series, exercise_type):
-        if not self.gemini_model:
+    def send_to_gemini(self, landmarks_series, exercise_type, analysis_type="FULL"):
+        if not self.gemini_model or analysis_type == "QUICK":
             # Changed return type to dictionary to match successful JSON output structure
             return {"error": "Gemini API not configured. Cannot provide AI feedback."}
 

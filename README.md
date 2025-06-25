@@ -18,7 +18,7 @@ An AI-powered full stack web app to help beginner gym-goers improve their form. 
 
 1. **Clone repo**  
    ```bash
-   git clone https://github.com/your-username/gym-form-analyser.git
+   git clone https://github.com/Qiyueyue123/gym-form-analyser.git
    cd gym-form-analyser
 
 # render frontend first
@@ -60,10 +60,14 @@ GEMINI_API_KEY2=your_key_2
 GEMINI_API_KEY3=your_key_3
 
 
-# add config.py to backend
+### 🔧 Add `config.py` to Backend
 
+Create a new file called `config.py` in your `backend/` directory and paste the following:
+
+```python
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
 class Config:
